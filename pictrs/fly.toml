@@ -1,0 +1,45 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-pictrs"
+primary_region = "sea"
+
+[build]
+  image = "asonix/pictrs:0.4.1"
+
+[env]
+  PICTRS__MEDIA__GIF__MAX_AREA = "65536"
+  PICTRS__MEDIA__GIF__MAX_FRAME_COUNT = "400"
+  PICTRS__MEDIA__GIF__MAX_HEIGHT = "256"
+  PICTRS__MEDIA__GIF__MAX_WIDTH = "256"
+  PICTRS__MEDIA__VIDEO_CODEC = "vp9"
+  PICTRS__SERVER__ADDRESS = "0.0.0.0:8080"
+  PICTRS__STORE__BUCKET_NAME = "lemdroid"
+  PICTRS__STORE__ENDPOINT = "https://s3.us-west-004.backblazeb2.com"
+  PICTRS__STORE__REGION = "us-west-004"
+  PICTRS__STORE__TYPE = "object_storage"
+  PICTRS__STORE__USE_PATH_STYLE = "false"
+  RUST_BACKTRACE = "full"
+
+[[mounts]]
+  source = "pictrs_data"
+  destination = "/mnt"
+
+[http_service]
+  internal_port = 8080
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 900
+    hard_limit = 1024
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    restart_limit = 0
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
