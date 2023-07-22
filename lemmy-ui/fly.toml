@@ -1,0 +1,35 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-lemmy-ui"
+primary_region = "sea"
+
+[build]
+  image = "dessalines/lemmy-ui:0.18.2"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  HOSTNAME = "lemdro.id"
+  LEMMY_UI_HTTPS = "false"
+  LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
+  LEMMY_UI_LEMMY_INTERNAL_HOST = "lemdroid-lemmy.flycast"
+
+[http_service]
+  internal_port = 1234
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 100
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    restart_limit = 0
+    method = "GET"
+    path = "/login"
+    protocol = "http"
