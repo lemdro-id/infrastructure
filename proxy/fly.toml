@@ -1,0 +1,61 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-lemmy-proxy"
+primary_region = "sea"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  HOSTNAME = "lemdro.id"
+
+[http_service]
+  internal_port = 80
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1024
+    soft_limit = 950
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "1s"
+    restart_limit = 0
+    method = "GET"
+    path = "/nginx_alive_check"
+    protocol = "http"
+
+[checks]
+  [checks.backend_api]
+    port = 80
+    type = "http"
+    interval = "1m0s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/api/v3/site"
+  [checks.backend_nodeinfo]
+    port = 80
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/nodeinfo/2.0.json"
+  [checks.frontend]
+    port = 80
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/login"
+  [checks.tcp]
+    port = 80
+    type = "tcp"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "1s"
