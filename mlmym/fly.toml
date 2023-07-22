@@ -1,0 +1,29 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-mlmym"
+primary_region = "sea"
+
+[build]
+  image = "ghcr.io/rystaf/mlmym:0.0.15"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  LEMMY_DOMAIN = "lemdro.id"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "1s"
+    restart_limit = 0
+    method = "GET"
+    path = "/"
+    protocol = "http"
