@@ -3,6 +3,9 @@
 app = "lemdroid-voyager"
 primary_region = "sea"
 
+[deploy]
+  strategy = "canary"
+
 [build]
   image = "ghcr.io/aeharding/voyager:0.27.0"
   
@@ -15,3 +18,11 @@ primary_region = "sea"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
+  
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "1s"
+    method = "GET"
+    path = "/posts/lemdro.id/local"
+    protocol = "http"
