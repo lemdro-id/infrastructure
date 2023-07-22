@@ -1,0 +1,25 @@
+{
+  hostname: "lemdro.id"
+  bind: "0.0.0.0"
+  port: 8536
+  tls_enabled: true
+
+  database: {
+  	pool_size: 30
+  }
+
+  pictrs: {
+    url: "http://lemdroid-pictrs.flycast/"
+    api_key: "<TOKEN>"
+  }
+
+  email: {
+    smtp_server: "smtp.postmarkapp.com:587"
+    # Login name for smtp server
+    smtp_login: "PM-T-outbound-8amL7NDv5kNb207JQLZcEi"
+    # Address to send emails from, eg "noreply@your-instance.com"
+    smtp_from_address: "noreply@lemdro.id"
+    # Whether or not smtp connections should use tls. Can be none, tls, or starttls
+    tls_type: "starttls"
+  }
+}

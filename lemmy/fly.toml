@@ -1,0 +1,33 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-lemmy"
+primary_region = "sea"
+
+[deploy]
+  strategy = "canary"
+
+[http_service]
+  internal_port = 8536
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 1024
+    soft_limit = 100
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/nodeinfo/2.0.json"
+    protocol = "http"
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
+    protocol = "http"
