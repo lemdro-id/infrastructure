@@ -6,17 +6,53 @@ primary_region = "sea"
 [deploy]
   strategy = "canary"
 
-[http_service]
-  internal_port = 8536
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 1
-  [http_service.concurrency]
-    type = "requests"
-    hard_limit = 1024
-    soft_limit = 100
+# [http_service]
+  # internal_port = 8536
+  # auto_stop_machines = true
+  # auto_start_machines = true
+  # min_machines_running = 0
+  # processes = ["no_scheduled_tasks"]
+  # [http_service.concurrency]
+    # type = "requests"
+    # hard_limit = 1024
+    # soft_limit = 200
+# 
+  # [[http_service.checks]]
+    # interval = "30s"
+    # timeout = "5s"
+    # grace_period = "10s"
+    # method = "GET"
+    # path = "/nodeinfo/2.0.json"
+    # protocol = "http"
+# 
+  # [[http_service.checks]]
+    # interval = "30s"
+    # timeout = "5s"
+    # grace_period = "15s"
+    # method = "GET"
+    # path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
+    # protocol = "http"
 
-  [[http_service.checks]]
+[[services]]
+  processes = ["scheduled"]
+  internal_port = 8536
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 500
+    soft_limit = 80
+  [[services.ports]]
+    port = 80
+
+  [[services.tcp_checks]]
+    grace_period = "5s"
+    interval = "15s"
+    timeout = "2s"
+
+  [[services.http_checks]]
     interval = "30s"
     timeout = "5s"
     grace_period = "10s"
@@ -24,10 +60,71 @@ primary_region = "sea"
     path = "/nodeinfo/2.0.json"
     protocol = "http"
 
-  [[http_service.checks]]
+  [[services.http_checks]]
     interval = "30s"
     timeout = "5s"
     grace_period = "15s"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
+
+[[services]]
+  processes = ["internal"]
+  internal_port = 8536
+  protocol = "tcp"
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 50
+  [[services.ports]]
+    port = 81
+
+  [[services.tcp_checks]]
+    grace_period = "5s"
+    interval = "15s"
+    timeout = "2s"
+
+[[services]]
+  processes = ["app"]
+  internal_port = 8536
+  protocol = "tcp"
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 1024
+    soft_limit = 200
+  [[services.ports]]
+    port = 80
+
+  [[services.tcp_checks]]
+    grace_period = "5s"
+    interval = "15s"
+    timeout = "2s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/nodeinfo/2.0.json"
+    protocol = "http"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
+    protocol = "http"
+    
+
+[processes]
+  internal = "/app/lemmy --disable-scheduled-tasks"
+  app = "/app/lemmy --disable-scheduled-tasks"
+  scheduled = "/app/lemmy"
+  
