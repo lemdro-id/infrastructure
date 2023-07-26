@@ -3,6 +3,9 @@
 app = "lemdroid-photon-ui"
 primary_region = "sea"
 
+[deploy]
+  strategy = "canary"
+
 [build]
   image = "ghcr.io/xyphyn/photon:v0.2.2"
 

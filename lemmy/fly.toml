@@ -6,33 +6,6 @@ primary_region = "sea"
 [deploy]
   strategy = "canary"
 
-# [http_service]
-  # internal_port = 8536
-  # auto_stop_machines = true
-  # auto_start_machines = true
-  # min_machines_running = 0
-  # processes = ["no_scheduled_tasks"]
-  # [http_service.concurrency]
-    # type = "requests"
-    # hard_limit = 1024
-    # soft_limit = 200
-# 
-  # [[http_service.checks]]
-    # interval = "30s"
-    # timeout = "5s"
-    # grace_period = "10s"
-    # method = "GET"
-    # path = "/nodeinfo/2.0.json"
-    # protocol = "http"
-# 
-  # [[http_service.checks]]
-    # interval = "30s"
-    # timeout = "5s"
-    # grace_period = "15s"
-    # method = "GET"
-    # path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
-    # protocol = "http"
-
 [[services]]
   processes = ["scheduled"]
   internal_port = 8536
@@ -45,6 +18,7 @@ primary_region = "sea"
     hard_limit = 400
     soft_limit = 150
   [[services.ports]]
+    handlers = ["http"]
     port = 80
 
   [[services.tcp_checks]]
@@ -80,6 +54,7 @@ primary_region = "sea"
     hard_limit = 200
     soft_limit = 50
   [[services.ports]]
+    handlers = ["http"]
     port = 81
 
   [[services.tcp_checks]]
@@ -99,6 +74,7 @@ primary_region = "sea"
     hard_limit = 1000
     soft_limit = 250
   [[services.ports]]
+    handlers = ["http"]
     port = 80
 
   [[services.tcp_checks]]
