@@ -4,7 +4,7 @@ app = "lemdroid-pictrs"
 primary_region = "sea"
 
 [build]
-  image = "asonix/pictrs:0.4.1"
+  image = "asonix/pictrs:0.4.2-rc.4"
 
 [env]
   PICTRS__MEDIA__GIF__MAX_AREA = "65536"

@@ -42,8 +42,8 @@ primary_region = "sea"
   min_machines_running = 1
   [services.concurrency]
     type = "requests"
-    hard_limit = 500
-    soft_limit = 80
+    hard_limit = 400
+    soft_limit = 150
   [[services.ports]]
     port = 80
 
@@ -96,8 +96,8 @@ primary_region = "sea"
   min_machines_running = 0
   [services.concurrency]
     type = "requests"
-    hard_limit = 1024
-    soft_limit = 200
+    hard_limit = 1000
+    soft_limit = 250
   [[services.ports]]
     port = 80
 
