@@ -1,0 +1,31 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "lemdroid-photon-ui"
+primary_region = "sea"
+
+[build]
+  image = "ghcr.io/xyphyn/photon:v0.2.2"
+
+[env]
+  PUBLIC_INSTANCE_URL = "lemdro.id"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+ [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 100
+  
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/"
+    protocol = "http"
+
