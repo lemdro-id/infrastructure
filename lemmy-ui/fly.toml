@@ -4,10 +4,10 @@ app = "lemdroid-lemmy-ui"
 primary_region = "sea"
 
 [build]
-  image = "dessalines/lemmy-ui:0.18.2"
+  image = "dessalines/lemmy-ui:0.18.3-rc.3"
 
 [deploy]
-  strategy = "canary"
+  strategy = "bluegreen"
 
 [env]
   HOSTNAME = "lemdro.id"
