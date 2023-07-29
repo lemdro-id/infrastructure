@@ -14,12 +14,12 @@
   }
 
   email: {
-    smtp_server: "smtp.postmarkapp.com:587"
+    smtp_server: "smtp.purelymail.com:465"
     # Login name for smtp server
-    smtp_login: "PM-T-outbound-8amL7NDv5kNb207JQLZcEi"
+    smtp_login: "support@lemdro.id"
     # Address to send emails from, eg "noreply@your-instance.com"
-    smtp_from_address: "noreply@lemdro.id"
+    smtp_from_address: "support@lemdro.id"
     # Whether or not smtp connections should use tls. Can be none, tls, or starttls
-    tls_type: "starttls"
+    tls_type: "tls"
   }
 }
