@@ -7,7 +7,7 @@ primary_region = "sea"
   strategy = "canary"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:v0.3.4"
+  image = "ghcr.io/xyphyn/photon:v0.4.21"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"
