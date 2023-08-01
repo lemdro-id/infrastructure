@@ -4,7 +4,7 @@ app = "lemdroid-mlmym"
 primary_region = "sea"
 
 [build]
-  image = "ghcr.io/rystaf/mlmym:0.0.15"
+  image = "ghcr.io/rystaf/mlmym:latest"
 
 [deploy]
   strategy = "canary"

@@ -7,7 +7,7 @@ primary_region = "sea"
   strategy = "canary"
 
 [build]
-  image = "ghcr.io/aeharding/voyager:1.0.1"
+  image = "ghcr.io/aeharding/voyager:latest"
   
 [env]
   CUSTOM_LEMMY_SERVERS = "lemdro.id"
