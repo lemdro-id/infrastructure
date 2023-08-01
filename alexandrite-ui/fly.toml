@@ -1,0 +1,38 @@
+# fly.toml app configuration file generated for lemdroid-alexandrite-ui on 2023-07-30T15:15:06-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = "lemdroid-alexandrite-ui"
+primary_region = "sea"
+
+[build]
+  image = "ghcr.io/sheodox/alexandrite:latest"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  ALEXANDRITE_DEFAULT_INSTANCE = "lemdro.id"
+  ALEXANDRITE_FORCE_INSTANCE = "lemdro.id"
+  ALEXANDRITE_WELCOME_INSTANCE_HELP = "false"
+  ALEXANDRITE_WELCOME_LEMMY_HELP = "false"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 1024
+    soft_limit = 512
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/"
+    protocol = "http"
