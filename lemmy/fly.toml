@@ -15,19 +15,14 @@ primary_region = "sea"
   min_machines_running = 1
   [services.concurrency]
     type = "requests"
-    hard_limit = 400
-    soft_limit = 150
+    hard_limit = 100
+    soft_limit = 50
   [[services.ports]]
     handlers = ["http"]
     port = 82
 
-  [[services.tcp_checks]]
-    grace_period = "5s"
-    interval = "5s"
-    timeout = "1s"
-
   [[services.http_checks]]
-    interval = "10s"
+    interval = "5s"
     timeout = "1s"
     grace_period = "10s"
     method = "GET"
@@ -36,43 +31,7 @@ primary_region = "sea"
 
   [[services.http_checks]]
     interval = "30s"
-    timeout = "1s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
-    protocol = "http"
-
-[[services]]
-  processes = ["internal"]
-  internal_port = 8536
-  protocol = "tcp"
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 0
-  [services.concurrency]
-    type = "connections"
-    hard_limit = 1024
-    soft_limit = 512
-  [[services.ports]]
-    handlers = ["http"]
-    port = 81
-
-  [[services.tcp_checks]]
-    grace_period = "5s"
-    interval = "5s"
-    timeout = "1s"
-
-  [[services.http_checks]]
-    interval = "10s"
-    timeout = "1s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/nodeinfo/2.0.json"
-    protocol = "http"
-
-  [[services.http_checks]]
-    interval = "30s"
-    timeout = "1s"
+    timeout = "2s"
     grace_period = "10s"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
@@ -93,13 +52,8 @@ primary_region = "sea"
     handlers = ["http"]
     port = 80
 
-  [[services.tcp_checks]]
-    grace_period = "5s"
-    interval = "5s"
-    timeout = "1s"
-
   [[services.http_checks]]
-    interval = "10s"
+    interval = "5s"
     timeout = "1s"
     grace_period = "10s"
     method = "GET"
@@ -108,7 +62,7 @@ primary_region = "sea"
 
   [[services.http_checks]]
     interval = "30s"
-    timeout = "1s"
+    timeout = "2s"
     grace_period = "15s"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
@@ -116,7 +70,6 @@ primary_region = "sea"
     
 
 [processes]
-  internal = "/app/lemmy --disable-scheduled-tasks"
   app = "/app/lemmy --disable-scheduled-tasks"
   scheduled = "/app/lemmy"
   
