@@ -21,8 +21,8 @@ primary_region = "sea"
 
  [http_service.concurrency]
     type = "requests"
-    hard_limit = 250
-    soft_limit = 100
+    hard_limit = 1024
+    soft_limit = 512
   
   [[http_service.checks]]
     interval = "30s"
