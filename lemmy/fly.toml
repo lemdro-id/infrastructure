@@ -3,6 +3,9 @@
 app = "lemdroid-lemmy"
 primary_region = "sea"
 
+[build]
+  image = "dessalines/lemmy:0.18.3"
+
 [deploy]
   strategy = "canary"
 
@@ -73,3 +76,7 @@ primary_region = "sea"
   app = "/app/lemmy --disable-scheduled-tasks"
   scheduled = "/app/lemmy"
   
+[[files]]
+  guest_path = "/config/config.hjson"
+  local_path = "./config.hjson"
+  processes = ["app", "scheduled"]
