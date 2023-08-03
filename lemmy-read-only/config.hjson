@@ -1,0 +1,14 @@
+{
+  hostname: "lemdro.id"
+  bind: "0.0.0.0"
+  port: 8536
+  tls_enabled: true
+
+  database: {
+  	pool_size: 30
+  }
+
+  pictrs: {
+    url: "http://lemdroid-pictrs.flycast/"
+  }
+}

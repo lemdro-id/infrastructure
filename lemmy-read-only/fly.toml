@@ -1,6 +1,6 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 
-app = "lemdroid-staging-lemmy"
+app = "lemdroid-staging-lemmy-read-only"
 primary_region = "sea"
 
 [build]
@@ -9,36 +9,6 @@ primary_region = "sea"
 [deploy]
   strategy = "canary"
 
-[[services]]
-  processes = ["scheduled"]
-  internal_port = 8536
-  protocol = "tcp"
-  auto_stop_machines = false
-  auto_start_machines = false
-  min_machines_running = 1
-  [services.concurrency]
-    type = "requests"
-    hard_limit = 100
-    soft_limit = 50
-  [[services.ports]]
-    handlers = ["http"]
-    port = 80
-
-  [[services.http_checks]]
-    interval = "5s"
-    timeout = "1s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/nodeinfo/2.0.json"
-    protocol = "http"
-
-  [[services.http_checks]]
-    interval = "30s"
-    timeout = "2s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
-    protocol = "http"
 
 [[services]]
   processes = ["app"]
@@ -69,14 +39,12 @@ primary_region = "sea"
     grace_period = "15s"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
-    protocol = "http" 
+    protocol = "http"
     
 
 [processes]
   app = "/app/lemmy --disable-scheduled-tasks"
-  scheduled = "/app/lemmy"
 
 [[files]]
   guest_path = "/config/config.hjson"
   local_path = "./config.hjson"
-  
