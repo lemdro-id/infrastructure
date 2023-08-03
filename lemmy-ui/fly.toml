@@ -13,7 +13,7 @@ primary_region = "sea"
   HOSTNAME = "lemdro.id"
   LEMMY_UI_HTTPS = "false"
   LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
-  LEMMY_UI_LEMMY_INTERNAL_HOST = "lemdroid-lemmy.flycast:81"
+  LEMMY_UI_LEMMY_INTERNAL_HOST = "lemdroid-lemmy.flycast"
 
 [http_service]
   internal_port = 1234
