@@ -25,12 +25,11 @@ const (
 )
 
 var (
-	mutex            sync.Mutex
-	times            = make([]time.Duration, 0, sampleSize)
-	avgResponseTime  = time.Duration(0)
-	overloaded       = false
-	requestsMeasured = 0.0
-	lastMeasured     time.Time
+	mutex           sync.Mutex
+	times           = make([]time.Duration, 0, sampleSize)
+	avgResponseTime = time.Duration(0)
+	overloaded      = false
+	lastMeasured    time.Time
 )
 
 func recordResponseTime(d time.Duration) {
@@ -53,14 +52,12 @@ func recordResponseTime(d time.Duration) {
 		avgResponseTime = 0
 	}
 
-	if avgResponseTime > responseTimeThreshold || isCPUOverloaded() {
+	if avgResponseTime > responseTimeThreshold {
 		if !overloaded {
 			overloaded = true
-			requestsMeasured = 0
 		}
 	} else {
 		overloaded = false
-		requestsMeasured = 0
 	}
 }
 
@@ -99,26 +96,19 @@ func shouldProcessRequest() bool {
 	return false
 }
 
-func serveReverseProxy(res http.ResponseWriter, req *http.Request) {
-	originatedByReplay := req.Header.Get(replaySrcHeaderKey) != ""
-
-	if !shouldProcessRequest() && !originatedByReplay {
-		res.Header().Set(replayHeaderKey, replayHeaderValue)
-		http.Error(res, "Service Unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
-	targetUrl, err := url.Parse(target)
+// setupReverseProxy function now returns the configured reverse proxy
+func setupReverseProxy(target string) *httputil.ReverseProxy {
+	targetURL, err := url.Parse(target)
 	if err != nil {
-		http.Error(res, "Bad Gateway", http.StatusBadGateway)
-		return
+		log.Fatalf("Invalid target URL: %v", err)
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(targetUrl)
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 	proxy.ModifyResponse = func(response *http.Response) error {
-		recordResponseTime(time.Since(req.Context().Value("startTime").(time.Time)))
-		// If we encounter a server error, we want to add the replay header
+		recordResponseTime(time.Since(response.Request.Context().Value("startTime").(time.Time)))
+
+		originatedByReplay := response.Request.Header.Get(replaySrcHeaderKey) != ""
 		if response.StatusCode >= http.StatusInternalServerError && !originatedByReplay {
 			response.Header.Set(replayHeaderKey, replayHeaderValue)
 		}
@@ -128,21 +118,42 @@ func serveReverseProxy(res http.ResponseWriter, req *http.Request) {
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
 		log.Printf("HTTP proxy error: %v", e)
+
+		originatedByReplay := r.Header.Get(replaySrcHeaderKey) != ""
 		if !originatedByReplay {
 			w.Header().Set(replayHeaderKey, replayHeaderValue)
 			http.Error(w, e.Error(), http.StatusServiceUnavailable)
 		}
 	}
 
-	req = req.WithContext(context.WithValue(req.Context(), "startTime", time.Now()))
-	proxy.ServeHTTP(res, req)
+	return proxy
+}
+
+// Function that configures the reverse proxy handler
+func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
+	return func(res http.ResponseWriter, req *http.Request) {
+		originatedByReplay := req.Header.Get(replaySrcHeaderKey) != ""
+
+		if !shouldProcessRequest() && !originatedByReplay {
+			res.Header().Set(replayHeaderKey, replayHeaderValue)
+			http.Error(res, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		req = req.WithContext(context.WithValue(req.Context(), "startTime", time.Now()))
+		proxy.ServeHTTP(res, req)
+	}
 }
 
 func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
 	if shouldProcessRequest() {
 		res.WriteHeader(http.StatusOK)
+		res.Header().Set("Content-Type", "text/plain")
+		_, _ = res.Write([]byte("OK")) // Write a response body
 	} else {
 		res.WriteHeader(http.StatusServiceUnavailable)
+		res.Header().Set("Content-Type", "text/plain")
+		_, _ = res.Write([]byte("Service Unavailable")) // Write a response body
 	}
 }
 
@@ -151,7 +162,7 @@ func main() {
 	http.HandleFunc("/proxy_health", serveHealthCheck)
 
 	// Reverse proxy endpoint
-	http.HandleFunc("/", serveReverseProxy)
+	http.HandleFunc("/", newReverseProxyHandler(setupReverseProxy(target)))
 
 	log.Printf("Listening on %s and proxying to %s\n", listenAddr, target)
 	log.Printf("Health check responding on %s/health\n", listenAddr)
