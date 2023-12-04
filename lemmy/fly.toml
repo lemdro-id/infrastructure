@@ -40,6 +40,13 @@ primary_region = "sea"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
 
+  [[services.http_checks]]
+    interval = "1s"
+    timeout = "1s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/proxy_health"
+
 [[services]]
   processes = ["app"]
   internal_port = 8536
@@ -70,13 +77,24 @@ primary_region = "sea"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
-    
+
+  [[services.http_checks]]
+    interval = "1s"
+    timeout = "1s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/proxy_health"
 
 [processes]
-  app = "/app/lemmy --disable-scheduled-tasks"
-  scheduled = "/app/lemmy"
+  app = "/usr/bin/supervisord"
+  scheduled = "/usr/bin/supervisord"
   
 [[files]]
-  guest_path = "/config/config.hjson"
-  local_path = "./config.hjson"
-  processes = ["app", "scheduled"]
+  guest_path = "/etc/supervisor/conf.d/supervisord.conf"
+  local_path = "./supervisord.conf"
+  processes = ["scheduled"]
+
+[[files]]
+guest_path = "/etc/supervisor/conf.d/supervisord.conf"
+local_path = "./supervisord.conf.noscheduled"
+processes = ["app"]

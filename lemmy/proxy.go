@@ -125,7 +125,7 @@ func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
 
 func main() {
 	// Health check endpoint
-	http.HandleFunc("/health", serveHealthCheck)
+	http.HandleFunc("/proxy_health", serveHealthCheck)
 
 	// Reverse proxy endpoint
 	http.HandleFunc("/", serveReverseProxy)
