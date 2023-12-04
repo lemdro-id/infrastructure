@@ -8,7 +8,7 @@ primary_region = "sea"
 
 [[services]]
   processes = ["scheduled"]
-  internal_port = 8536
+  internal_port = 80
   protocol = "tcp"
   auto_stop_machines = false
   auto_start_machines = false
@@ -43,10 +43,11 @@ primary_region = "sea"
     grace_period = "10s"
     method = "GET"
     path = "/proxy_health"
+    protocol = "http"
 
 [[services]]
   processes = ["app"]
-  internal_port = 8536
+  internal_port = 80
   protocol = "tcp"
   auto_stop_machines = true
   auto_start_machines = true
@@ -81,17 +82,20 @@ primary_region = "sea"
     grace_period = "10s"
     method = "GET"
     path = "/proxy_health"
+    protocol = "http"
 
 [processes]
   app = "/usr/bin/supervisord"
   scheduled = "/usr/bin/supervisord"
+#  app = "bash -c /bin/run_wrapper.sh"
+#  scheduled = "bash -c /bin/run_wrapper.sh"
   
 [[files]]
-  guest_path = "/etc/supervisor/conf.d/supervisord.conf"
+  guest_path = "/etc/supervisor/supervisord.conf"
   local_path = "./supervisord.conf"
   processes = ["scheduled"]
 
 [[files]]
-guest_path = "/etc/supervisor/conf.d/supervisord.conf"
-local_path = "./supervisord.conf.noscheduled"
-processes = ["app"]
+  guest_path = "/etc/supervisor/supervisord.conf"
+  local_path = "./supervisord.conf.noscheduled"
+  processes = ["app"]

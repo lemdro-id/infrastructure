@@ -7,7 +7,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/proxy ./proxy.go
 
 FROM dessalines/lemmy:0.18.5
 COPY --from=0 /bin/proxy /bin/proxy
-RUN apt-get update && apt-get install -y supervisor
+USER root
+#RUN apk update && apk add --no-cache bash
+RUN apk update && apk add --no-cache supervisor
 RUN mkdir -p /var/log/supervisor
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-CMD ["usr/bin/supervisord"]
+COPY run_wrapper.sh /bin/run_wrapper.sh
+#CMD ["bash -c /bin/run_wrapper.sh"]
+CMD ["/usr/bin/supervisord"]
+EXPOSE 80
