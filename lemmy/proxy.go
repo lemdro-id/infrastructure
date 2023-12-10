@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -89,8 +88,6 @@ func setupReverseProxy(target string) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 	proxy.ModifyResponse = func(response *http.Response) error {
-		recordResponseTime(time.Since(response.Request.Context().Value("startTime").(time.Time)))
-
 		originatedByReplay := response.Request.Header.Get(replaySrcHeaderKey) != ""
 		if !originatedByReplay && (response.StatusCode >= http.StatusInternalServerError || response.StatusCode == http.StatusBadRequest) {
 			response.Header.Set(replayHeaderKey, replayHeaderValue)
@@ -123,9 +120,9 @@ func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWrit
 			http.Error(res, "Service Unavailable", http.StatusServiceUnavailable)
 			return
 		}
-
-		req = req.WithContext(context.WithValue(req.Context(), "startTime", time.Now()))
+		start := time.Now()
 		proxy.ServeHTTP(res, req)
+		recordResponseTime(time.Since(start))
 	}
 }
 
@@ -144,6 +141,7 @@ func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
 		responseText := fmt.Sprintf("Service Unavailable - Average Response Time: %v", getAvgResponseTime())
 		_, _ = res.Write([]byte(responseText)) // Write the response body
 	}
+
 }
 
 func main() {
