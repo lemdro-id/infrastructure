@@ -2,83 +2,103 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	target             = "http://127.0.0.1:8536"
-	listenAddr         = ":8080"
-	responseTimeTarget = 500 * time.Millisecond
-	sampleSize         = 500
-	minSampleFraction  = 0.10 // Always allow at least 1% of requests through
-	replayHeaderKey    = "fly-replay"
-	replayHeaderValue  = "elsewhere=true"
-	replaySrcHeaderKey = "fly-replay-src"
+	target                 = "http://127.0.0.1:8536"
+	listenAddr             = ":8080"
+	responseTimeTarget     = 500 * time.Millisecond
+	sampleSize             = 500
+	minSampleFraction      = 0.10 // Always allow at least 1% of requests through
+	replayHeaderKey        = "fly-replay"
+	replayHeaderValue      = "elsewhere=true"
+	replaySrcHeaderKey     = "fly-replay-src"
+	emaAlpha               = 0.1
+	FractionAdjustmentRate = 0.001
 )
 
 var (
 	mutex               sync.Mutex
-	times               = make([]time.Duration, 0, sampleSize)
-	avgResponseTime     = time.Duration(0)
-	sampleFraction      = 1.0 // percentage of requests to allow
-	currentRequestCount = 0
-	lastRequestTime     = time.Now()
+	sampleFraction            = int64(1.0 * 10000) // We'll use an int to store the percentage scaled up by 10,000
+	currentRequestCount int64 = 0
+	emaResponseTime     int64 = 0
+	lastResponseTime    int64 = time.Now().Unix()
 )
+
+// Helper function to access the average response time safely
+func getAvgResponseTime() time.Duration {
+	avg := atomic.LoadInt64(&emaResponseTime)
+	return time.Duration(avg)
+}
 
 func recordResponseTime(d time.Duration) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	lastRequestTime = time.Now()
+	newResponseTime := int64(d)
 
-	times = append(times, d)
-	if len(times) > sampleSize {
-		times = times[1:]
+	for {
+		current := atomic.LoadInt64(&emaResponseTime)
+		newEmaResponseTime := int64(float64(current)*(1-emaAlpha) + float64(newResponseTime)*emaAlpha)
+
+		if atomic.CompareAndSwapInt64(&emaResponseTime, current, newEmaResponseTime) {
+			currentAvg := time.Duration(newEmaResponseTime)
+			// Load the current sampleFraction
+			currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
+			currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0
+
+			var newSampleFraction float64
+			if currentAvg > responseTimeTarget {
+				// response time too high, shed some load
+				newSampleFraction = max(minSampleFraction, currentSampleFraction-FractionAdjustmentRate)
+			} else {
+				// response time low enough, gradually add load
+				newSampleFraction = min(1.0, currentSampleFraction+FractionAdjustmentRate)
+			}
+
+			// Store the updated sampleFraction
+			newSampleFractionScaled := int64(newSampleFraction * 10000)
+			atomic.StoreInt64(&sampleFraction, newSampleFractionScaled)
+
+			break
+		}
 	}
 
-	var total time.Duration
-	for _, t := range times {
-		total += t
-	}
-
-	if len(times) > 0 {
-		avgResponseTime = total / time.Duration(len(times))
-	} else {
-		avgResponseTime = 0
-	}
-
-	if avgResponseTime > responseTimeTarget {
-		// response time too high, shed some load
-		sampleFraction = max(minSampleFraction, sampleFraction-0.001)
-	} else {
-		// response time low enough, gradually add load
-		sampleFraction = min(1.0, sampleFraction+0.001)
-	}
+	response := time.Now().Unix()
+	atomic.StoreInt64(&lastResponseTime, response)
 }
 
 func shouldProcessRequest() bool {
-	mutex.Lock()
-	defer mutex.Unlock()
+	// Load the current sampleFraction
+	currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
+	currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0
 
 	// skip load checking if we are accepting all requests
-	if sampleFraction == 1.0 {
+	if currentSampleFraction == 1.0 {
 		return true
 	}
 
-	allowedRequestCount := int(sampleFraction * float64(sampleSize))
+	allowedRequestCount := int(currentSampleFraction * float64(sampleSize))
 
-	currentRequestCount++
-	if currentRequestCount >= sampleSize {
-		currentRequestCount = 0
+	// Since currentRequestCount variable is also shared we need to use atomic operations for it
+	// Convert the count to an atomic variable as well
+	currentRequestCountLocal := atomic.AddInt64(&currentRequestCount, 1)
+
+	// Restart the count whenever it exceeds sampleSize
+	if currentRequestCountLocal >= int64(sampleSize) {
+		atomic.StoreInt64(&currentRequestCount, 0)
 		return false
 	}
 
-	return currentRequestCount <= allowedRequestCount
+	return currentRequestCountLocal <= int64(allowedRequestCount)
 }
 
 // setupReverseProxy function now returns the configured reverse proxy
@@ -133,14 +153,19 @@ func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWrit
 }
 
 func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
-	if sampleFraction >= minSampleFraction {
+	// Load the sampleFraction atomically and convert it back to a floating-point percentage
+	currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
+	currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0 // unscale it
+
+	if currentSampleFraction >= minSampleFraction {
 		res.WriteHeader(http.StatusOK)
 		res.Header().Set("Content-Type", "text/plain")
 		_, _ = res.Write([]byte("OK")) // Write a response body
 	} else {
 		res.WriteHeader(http.StatusServiceUnavailable)
 		res.Header().Set("Content-Type", "text/plain")
-		_, _ = res.Write([]byte("Service Unavailable")) // Write a response body
+		responseText := fmt.Sprintf("Service Unavailable - Average Response Time: %v", getAvgResponseTime())
+		_, _ = res.Write([]byte(responseText)) // Write the response body
 	}
 }
 
@@ -157,16 +182,15 @@ func main() {
 			time.Sleep(5 * time.Second) // Wait for 5 seconds
 
 			// Safely read shared variables
-			mutex.Lock()
-			currentLastRequestTime := lastRequestTime
-			currentSampleFraction := sampleFraction
-			currentAvgResponseTime := avgResponseTime
-			mutex.Unlock()
+			currentLastResponseTime := time.Unix(atomic.LoadInt64(&lastResponseTime), 0)
+			currentAvgResponseTime := getAvgResponseTime()
+			// Load sampleFraction atomically and convert it to percentage
+			currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
+			currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0
 
-			if sampleFraction < 1.0 && time.Since(currentLastRequestTime) > 5*time.Second {
-				mutex.Lock()
-				sampleFraction = 1.0
-				mutex.Unlock()
+			if currentSampleFraction < 1.0 && time.Since(currentLastResponseTime) > 5*time.Second {
+				atomic.StoreInt64(&sampleFraction, int64(0.5*10000))
+				atomic.StoreInt64(&emaResponseTime, 0)
 			}
 
 			// Print the desired statistics
