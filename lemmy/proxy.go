@@ -163,8 +163,7 @@ func main() {
 			currentAvgResponseTime := avgResponseTime
 			mutex.Unlock()
 
-			if time.Since(currentLastRequestTime) > 5*time.Second {
-				log.Printf("No requests in the last 5 seconds. Resetting sample fraction to 0.5.\n")
+			if sampleFraction < 1.0 && time.Since(currentLastRequestTime) > 5*time.Second {
 				mutex.Lock()
 				sampleFraction = 1.0
 				mutex.Unlock()
