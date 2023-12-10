@@ -14,7 +14,7 @@ import (
 const (
 	target                 = "http://127.0.0.1:8536"
 	listenAddr             = ":8080"
-	responseTimeTarget     = 500 * time.Millisecond
+	maxResponseTimeTarget  = 800 * time.Millisecond
 	sampleSize             = 500
 	minSampleFraction      = 0.10 // Always allow at least 1% of requests through
 	replayHeaderKey        = "fly-replay"
