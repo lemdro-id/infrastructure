@@ -92,10 +92,9 @@ func setupReverseProxy(target string) *httputil.ReverseProxy {
 		recordResponseTime(time.Since(response.Request.Context().Value("startTime").(time.Time)))
 
 		originatedByReplay := response.Request.Header.Get(replaySrcHeaderKey) != ""
-		if response.StatusCode >= http.StatusInternalServerError && !originatedByReplay {
+		if !originatedByReplay && (response.StatusCode >= http.StatusInternalServerError || response.StatusCode == http.StatusBadRequest) {
 			response.Header.Set(replayHeaderKey, replayHeaderValue)
 		}
-
 		return nil
 	}
 
