@@ -12,23 +12,24 @@ import (
 )
 
 const (
-	target                 = "http://127.0.0.1:8536"
-	listenAddr             = ":8080"
-	maxResponseTimeTarget  = 800 * time.Millisecond
-	sampleSize             = 500
-	minSampleFraction      = 0.10 // Always allow at least 1% of requests through
-	replayHeaderKey        = "fly-replay"
-	replayHeaderValue      = "elsewhere=true"
-	replaySrcHeaderKey     = "fly-replay-src"
-	emaAlpha               = 0.1
-	FractionAdjustmentRate = 0.001
+	target                = "http://127.0.0.1:8536"
+	listenAddr            = ":8080"
+	maxResponseTimeTarget = 700 * time.Millisecond
+	sampleSize            = 500
+	minSampleFraction     = 0.10 // Always allow at least 1% of requests through
+	replayHeaderKey       = "fly-replay"
+	replayHeaderValue     = "elsewhere=true"
+	replaySrcHeaderKey    = "fly-replay-src"
+	emaAlpha              = 0.1
+	IncreaseRate          = 0.01
+	DecreaseRate          = 0.05
 )
 
 var (
 	sampleFraction            = int64(1.0 * 10000) // We'll use an int to store the percentage scaled up by 10,000
 	currentRequestCount int64 = 0
 	emaResponseTime     int64 = 0
-	lastResponseTime    int64 = time.Now().Unix()
+	lastResponseTime          = time.Now().Unix()
 )
 
 // Helper function to access the average response time safely
@@ -45,24 +46,6 @@ func recordResponseTime(d time.Duration) {
 		newEmaResponseTime := int64(float64(current)*(1-emaAlpha) + float64(newResponseTime)*emaAlpha)
 
 		if atomic.CompareAndSwapInt64(&emaResponseTime, current, newEmaResponseTime) {
-			currentAvg := time.Duration(newEmaResponseTime)
-			// Load the current sampleFraction
-			currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
-			currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0
-
-			var newSampleFraction float64
-			if currentAvg > responseTimeTarget {
-				// response time too high, shed some load
-				newSampleFraction = max(minSampleFraction, currentSampleFraction-FractionAdjustmentRate)
-			} else {
-				// response time low enough, gradually add load
-				newSampleFraction = min(1.0, currentSampleFraction+FractionAdjustmentRate)
-			}
-
-			// Store the updated sampleFraction
-			newSampleFractionScaled := int64(newSampleFraction * 10000)
-			atomic.StoreInt64(&sampleFraction, newSampleFractionScaled)
-
 			break
 		}
 	}
@@ -136,7 +119,7 @@ func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWrit
 		userAgent := req.Header.Get("User-Agent")
 
 		// Exempt "Consul Health Check" User-Agent from load shedding
-		if userAgent != "Consul Health Check" && !shouldProcessRequest() && !originatedByReplay {
+		if userAgent != "Consul Health Check" && !originatedByReplay && !shouldProcessRequest() {
 			res.Header().Set(replayHeaderKey, replayHeaderValue)
 			http.Error(res, "Service Unavailable", http.StatusServiceUnavailable)
 			return
@@ -191,6 +174,34 @@ func main() {
 			// Print the desired statistics
 			log.Printf("Average Response Time: %v\n", currentAvgResponseTime)
 			log.Printf("Current Sample Fraction: %.2f%%\n", currentSampleFraction*100)
+		}
+	}()
+
+	// Adjust sampleFraction on a timed interval in a separate routine
+	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond) // Adjust interval as needed
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				currentAvgResponseTime := getAvgResponseTime()
+
+				currentSampleFractionScaled := atomic.LoadInt64(&sampleFraction)
+				currentSampleFraction := float64(currentSampleFractionScaled) / 10000.0
+
+				var newSampleFraction float64
+				if currentAvgResponseTime > maxResponseTimeTarget {
+					// response time too high, shed some load
+					newSampleFraction = max(minSampleFraction, currentSampleFraction-DecreaseRate)
+				} else {
+					// response time low enough, gradually add load
+					newSampleFraction = min(1.0, currentSampleFraction+IncreaseRate)
+				}
+
+				// Store the updated sampleFraction
+				newSampleFractionScaled := int64(newSampleFraction * 10000)
+				atomic.StoreInt64(&sampleFraction, newSampleFractionScaled)
+			}
 		}
 	}()
 
