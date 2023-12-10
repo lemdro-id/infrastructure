@@ -178,7 +178,7 @@ func main() {
 
 	// Adjust sampleFraction on a timed interval in a separate routine
 	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond) // Adjust interval as needed
+		ticker := time.NewTicker(100 * time.Millisecond) // Adjust interval as needed
 		defer ticker.Stop()
 		for {
 			select {
