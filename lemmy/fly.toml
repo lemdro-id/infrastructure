@@ -4,7 +4,7 @@ app = "lemdroid-lemmy"
 primary_region = "sea"
 
 [deploy]
-  strategy = "canary"
+  strategy = "bluegreen"
 
 [[services]]
   processes = ["scheduled"]
@@ -38,7 +38,7 @@ primary_region = "sea"
     protocol = "http"
 
   [[services.http_checks]]
-    interval = "1s"
+    interval = "2s"
     timeout = "1s"
     grace_period = "10s"
     method = "GET"
@@ -54,8 +54,8 @@ primary_region = "sea"
   min_machines_running = 0
   [services.concurrency]
     type = "requests"
-    hard_limit = 1024
-    soft_limit = 512
+    hard_limit = 512
+    soft_limit = 384
   [[services.ports]]
     handlers = ["http"]
     port = 80
@@ -77,7 +77,7 @@ primary_region = "sea"
     protocol = "http"
 
   [[services.http_checks]]
-    interval = "1s"
+    interval = "2s"
     timeout = "1s"
     grace_period = "2s"
     method = "GET"
