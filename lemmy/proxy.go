@@ -15,7 +15,7 @@ const (
 	listenAddr         = ":8080"
 	responseTimeTarget = 500 * time.Millisecond
 	sampleSize         = 500
-	minSampleFraction  = 0.01 // Always allow at least 1% of requests through
+	minSampleFraction  = 0.10 // Always allow at least 1% of requests through
 	replayHeaderKey    = "fly-replay"
 	replayHeaderValue  = "elsewhere=true"
 	replaySrcHeaderKey = "fly-replay-src"
@@ -27,11 +27,14 @@ var (
 	avgResponseTime     = time.Duration(0)
 	sampleFraction      = 1.0 // percentage of requests to allow
 	currentRequestCount = 0
+	lastRequestTime     = time.Now()
 )
 
 func recordResponseTime(d time.Duration) {
 	mutex.Lock()
 	defer mutex.Unlock()
+
+	lastRequestTime = time.Now()
 
 	times = append(times, d)
 	if len(times) > sampleSize {
@@ -128,7 +131,7 @@ func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWrit
 }
 
 func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
-	if sampleFraction >= 0.10 {
+	if sampleFraction >= minSampleFraction {
 		res.WriteHeader(http.StatusOK)
 		res.Header().Set("Content-Type", "text/plain")
 		_, _ = res.Write([]byte("OK")) // Write a response body
@@ -153,9 +156,17 @@ func main() {
 
 			// Safely read shared variables
 			mutex.Lock()
+			currentLastRequestTime := lastRequestTime
 			currentSampleFraction := sampleFraction
 			currentAvgResponseTime := avgResponseTime
 			mutex.Unlock()
+
+			if time.Since(currentLastRequestTime) > 5*time.Second {
+				log.Printf("No requests in the last 5 seconds. Resetting sample fraction to 0.5.\n")
+				mutex.Lock()
+				sampleFraction = 0.5
+				mutex.Unlock()
+			}
 
 			// Print the desired statistics
 			log.Printf("Average Response Time: %v\n", currentAvgResponseTime)
