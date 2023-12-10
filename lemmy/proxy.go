@@ -20,7 +20,7 @@ const (
 	replayHeaderValue     = "elsewhere=true"
 	replaySrcHeaderKey    = "fly-replay-src"
 	emaAlpha              = 0.1
-	IncreaseRate          = 0.01
+	IncreaseRate          = 0.05
 	DecreaseRate          = 0.05
 )
 
@@ -96,8 +96,6 @@ func setupReverseProxy(target string) *httputil.ReverseProxy {
 	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
-		log.Printf("HTTP proxy error: %v", e)
-
 		originatedByReplay := r.Header.Get(replaySrcHeaderKey) != ""
 		if !originatedByReplay {
 			w.Header().Set(replayHeaderKey, replayHeaderValue)
@@ -176,7 +174,7 @@ func main() {
 
 	// Adjust sampleFraction on a timed interval in a separate routine
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond) // Adjust interval as needed
+		ticker := time.NewTicker(500 * time.Millisecond) // Adjust interval as needed
 		defer ticker.Stop()
 		for {
 			select {
