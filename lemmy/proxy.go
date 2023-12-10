@@ -118,8 +118,10 @@ func setupReverseProxy(target string) *httputil.ReverseProxy {
 func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
 		originatedByReplay := req.Header.Get(replaySrcHeaderKey) != ""
+		userAgent := req.Header.Get("User-Agent")
 
-		if !shouldProcessRequest() && !originatedByReplay {
+		// Exempt "Consul Health Check" User-Agent from load shedding
+		if userAgent != "Consul Health Check" && !shouldProcessRequest() && !originatedByReplay {
 			res.Header().Set(replayHeaderKey, replayHeaderValue)
 			http.Error(res, "Service Unavailable", http.StatusServiceUnavailable)
 			return
@@ -164,7 +166,7 @@ func main() {
 			if time.Since(currentLastRequestTime) > 5*time.Second {
 				log.Printf("No requests in the last 5 seconds. Resetting sample fraction to 0.5.\n")
 				mutex.Lock()
-				sampleFraction = 0.5
+				sampleFraction = 1.0
 				mutex.Unlock()
 			}
 
