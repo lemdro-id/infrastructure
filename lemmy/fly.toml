@@ -76,20 +76,18 @@ primary_region = "sea"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
 
-#  [[services.http_checks]]
-#    interval = "1s"
-#    timeout = "1s"
-#    grace_period = "2s"
-#    method = "GET"
-#    path = "/proxy_health"
-#    protocol = "http"
+  [[services.http_checks]]
+    interval = "1s"
+    timeout = "1s"
+    grace_period = "2s"
+    method = "GET"
+    path = "/proxy_health"
+    protocol = "http"
 
 [processes]
   app = "/usr/bin/supervisord"
   scheduled = "/usr/bin/supervisord"
-#  app = "bash -c /bin/run_wrapper.sh"
-#  scheduled = "bash -c /bin/run_wrapper.sh"
-  
+
 [[files]]
   guest_path = "/etc/supervisord.conf"
   local_path = "./supervisord.conf"
