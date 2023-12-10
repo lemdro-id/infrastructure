@@ -8,28 +8,25 @@ import (
 	"net/url"
 	"sync"
 	"time"
-
-	"github.com/shirou/gopsutil/cpu"
 )
 
 const (
-	target                 = "http://127.0.0.1:8536"
-	listenAddr             = ":8080"
-	responseTimeThreshold  = 500 * time.Millisecond
-	cpuUsageThreshold      = 75.0 // Percent
-	sampleSize             = 100
-	recoverySampleFraction = 0.10 // Allow 10% of requests through for measuring
-	replayHeaderKey        = "fly-replay"
-	replayHeaderValue      = "elsewhere=true"
-	replaySrcHeaderKey     = "fly-replay-src"
+	target             = "http://127.0.0.1:8536"
+	listenAddr         = ":8080"
+	responseTimeTarget = 500 * time.Millisecond
+	sampleSize         = 500
+	minSampleFraction  = 0.01 // Always allow at least 1% of requests through
+	replayHeaderKey    = "fly-replay"
+	replayHeaderValue  = "elsewhere=true"
+	replaySrcHeaderKey = "fly-replay-src"
 )
 
 var (
-	mutex           sync.Mutex
-	times           = make([]time.Duration, 0, sampleSize)
-	avgResponseTime = time.Duration(0)
-	overloaded      = false
-	lastMeasured    time.Time
+	mutex               sync.Mutex
+	times               = make([]time.Duration, 0, sampleSize)
+	avgResponseTime     = time.Duration(0)
+	sampleFraction      = 1.0 // percentage of requests to allow
+	currentRequestCount = 0
 )
 
 func recordResponseTime(d time.Duration) {
@@ -52,48 +49,33 @@ func recordResponseTime(d time.Duration) {
 		avgResponseTime = 0
 	}
 
-	if avgResponseTime > responseTimeThreshold {
-		if !overloaded {
-			overloaded = true
-		}
+	if avgResponseTime > responseTimeTarget {
+		// response time too high, shed some load
+		sampleFraction = max(minSampleFraction, sampleFraction-0.001)
 	} else {
-		overloaded = false
+		// response time low enough, gradually add load
+		sampleFraction = min(1.0, sampleFraction+0.001)
 	}
-}
-
-func isCPUOverloaded() bool {
-	percentages, err := cpu.Percent(time.Minute, false)
-	if err != nil {
-		log.Printf("Error retrieving CPU usage: %v", err)
-		return false
-	}
-	// We use the first element in the slice assuming single CPU info is sufficient
-	return percentages[0] > cpuUsageThreshold
 }
 
 func shouldProcessRequest() bool {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if !overloaded {
+	// skip load checking if we are accepting all requests
+	if sampleFraction == 1.0 {
 		return true
 	}
 
-	// Define a sliding window time period for measuring
-	recoveryPeriod := 1 * time.Second
-	recoveryWindowFraction := recoverySampleFraction // 10% of the requests
+	allowedRequestCount := int(sampleFraction * float64(sampleSize))
 
-	now := time.Now()
-	// Convert the recoveryWindowFraction to time.Duration before the multiplication
-	timeSinceLastMeasured := now.Sub(lastMeasured)
-	allowedInterval := time.Duration(recoveryWindowFraction * float64(recoveryPeriod))
-
-	if timeSinceLastMeasured >= allowedInterval {
-		lastMeasured = now
-		return true
+	currentRequestCount++
+	if currentRequestCount >= sampleSize {
+		currentRequestCount = 0
+		return false
 	}
 
-	return false
+	return currentRequestCount <= allowedRequestCount
 }
 
 // setupReverseProxy function now returns the configured reverse proxy
@@ -146,7 +128,7 @@ func newReverseProxyHandler(proxy *httputil.ReverseProxy) func(http.ResponseWrit
 }
 
 func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
-	if shouldProcessRequest() {
+	if sampleFraction >= 0.10 {
 		res.WriteHeader(http.StatusOK)
 		res.Header().Set("Content-Type", "text/plain")
 		_, _ = res.Write([]byte("OK")) // Write a response body
@@ -163,6 +145,23 @@ func main() {
 
 	// Reverse proxy endpoint
 	http.HandleFunc("/", newReverseProxyHandler(setupReverseProxy(target)))
+
+	// Start a goroutine for printing statistics periodically
+	go func() {
+		for {
+			time.Sleep(5 * time.Second) // Wait for 5 seconds
+
+			// Safely read shared variables
+			mutex.Lock()
+			currentSampleFraction := sampleFraction
+			currentAvgResponseTime := avgResponseTime
+			mutex.Unlock()
+
+			// Print the desired statistics
+			log.Printf("Average Response Time: %v\n", currentAvgResponseTime)
+			log.Printf("Current Sample Fraction: %.2f%%\n", currentSampleFraction*100)
+		}
+	}()
 
 	log.Printf("Listening on %s and proxying to %s\n", listenAddr, target)
 	log.Printf("Health check responding on %s/health\n", listenAddr)
