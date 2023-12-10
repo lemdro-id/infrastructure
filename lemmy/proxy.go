@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -26,7 +25,6 @@ const (
 )
 
 var (
-	mutex               sync.Mutex
 	sampleFraction            = int64(1.0 * 10000) // We'll use an int to store the percentage scaled up by 10,000
 	currentRequestCount int64 = 0
 	emaResponseTime     int64 = 0
@@ -40,9 +38,6 @@ func getAvgResponseTime() time.Duration {
 }
 
 func recordResponseTime(d time.Duration) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	newResponseTime := int64(d)
 
 	for {
