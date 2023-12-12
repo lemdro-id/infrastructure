@@ -3,15 +3,12 @@
 app = "lemdroid-lemmy"
 primary_region = "sea"
 
-[build]
-  image = "dessalines/lemmy:0.18.5"
-
 [deploy]
   strategy = "canary"
 
 [[services]]
   processes = ["scheduled"]
-  internal_port = 8536
+  internal_port = 8080
   protocol = "tcp"
   auto_stop_machines = false
   auto_start_machines = false
@@ -40,17 +37,25 @@ primary_region = "sea"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
 
+  [[services.http_checks]]
+    interval = "2s"
+    timeout = "1s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/proxy_health"
+    protocol = "http"
+
 [[services]]
   processes = ["app"]
-  internal_port = 8536
+  internal_port = 8080
   protocol = "tcp"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
   [services.concurrency]
     type = "requests"
-    hard_limit = 1024
-    soft_limit = 512
+    hard_limit = 512
+    soft_limit = 384
   [[services.ports]]
     handlers = ["http"]
     port = 80
@@ -70,12 +75,29 @@ primary_region = "sea"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
-    
+
+  [[services.http_checks]]
+    interval = "2s"
+    timeout = "1s"
+    grace_period = "2s"
+    method = "GET"
+    path = "/proxy_health"
+    protocol = "http"
 
 [processes]
-  app = "/app/lemmy --disable-scheduled-tasks"
-  scheduled = "/app/lemmy"
-  
+  app = "/usr/bin/supervisord"
+  scheduled = "/usr/bin/supervisord"
+
+[[files]]
+  guest_path = "/etc/supervisord.conf"
+  local_path = "./supervisord.conf"
+  processes = ["scheduled"]
+
+[[files]]
+  guest_path = "/etc/supervisord.conf"
+  local_path = "./supervisord.conf.noscheduled"
+  processes = ["app"]
+
 [[files]]
   guest_path = "/config/config.hjson"
   local_path = "./config.hjson"
