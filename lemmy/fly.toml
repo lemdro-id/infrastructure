@@ -15,11 +15,11 @@ primary_region = "sea"
   min_machines_running = 1
   [services.concurrency]
     type = "requests"
-    hard_limit = 100
-    soft_limit = 50
+    hard_limit = 1024
+    soft_limit = 896
   [[services.ports]]
     handlers = ["http"]
-    port = 82
+    port = 80
 
   [[services.http_checks]]
     interval = "5s"
@@ -32,7 +32,7 @@ primary_region = "sea"
   [[services.http_checks]]
     interval = "30s"
     timeout = "2s"
-    grace_period = "10s"
+    grace_period = "15s"
     method = "GET"
     path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
     protocol = "http"
@@ -40,7 +40,7 @@ primary_region = "sea"
   [[services.http_checks]]
     interval = "2s"
     timeout = "1s"
-    grace_period = "10s"
+    grace_period = "2s"
     method = "GET"
     path = "/proxy_health"
     protocol = "http"
@@ -54,8 +54,8 @@ primary_region = "sea"
   min_machines_running = 0
   [services.concurrency]
     type = "requests"
-    hard_limit = 512
-    soft_limit = 384
+    hard_limit = 1024
+    soft_limit = 896
   [[services.ports]]
     handlers = ["http"]
     port = 80
