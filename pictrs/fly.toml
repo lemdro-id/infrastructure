@@ -5,7 +5,7 @@ primary_region = "sea"
 swap_size_mb = 2048
 
 [build]
-  image = "asonix/pictrs:0.4.2-rc.4"
+  image = "asonix/pictrs:0.4.6"
 
 [env]
   PICTRS__MEDIA__GIF__MAX_AREA = "65536"
@@ -33,7 +33,7 @@ swap_size_mb = 2048
   
   [http_service.concurrency]
     type = "requests"
-    soft_limit = 900
+    soft_limit = 896
     hard_limit = 1024
 
   [[http_service.checks]]
