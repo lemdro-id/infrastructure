@@ -4,7 +4,7 @@ app = "lemdroid-lemmy"
 primary_region = "sea"
 
 [deploy]
-  strategy = "bluegreen"
+  strategy = "canary"
 
 [[services]]
   processes = ["scheduled"]
