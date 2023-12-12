@@ -14,7 +14,5 @@ COPY supervisord.conf /etc/supervisord.conf
 
 RUN apk update && apk add --no-cache supervisor
 RUN mkdir -p /var/log/supervisor
-#COPY run_wrapper.sh /bin/run_wrapper.sh
-#CMD ["bash -c /bin/run_wrapper.sh"]
 CMD ["/usr/bin/supervisord -c /etc/supervisord.conf"]
 EXPOSE 8080
