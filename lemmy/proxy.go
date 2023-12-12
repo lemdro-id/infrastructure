@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -24,11 +27,23 @@ const (
 	DecreaseRate          = 0.05
 )
 
+// Added a cache entry struct
+type cacheEntry struct {
+	content   []byte
+	timestamp time.Time
+}
+
 var (
 	sampleFraction            = int64(1.0 * 10000) // We'll use an int to store the percentage scaled up by 10,000
 	currentRequestCount int64 = 0
 	emaResponseTime     int64 = 0
 	lastResponseTime          = time.Now().Unix()
+	cache                     = struct {
+		sync.RWMutex
+		data map[string]*cacheEntry
+	}{
+		data: make(map[string]*cacheEntry),
+	}
 )
 
 // Helper function to access the average response time safely
@@ -142,12 +157,95 @@ func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
 
 }
 
+func isIpInternal(ipAddress string) bool {
+	ip := net.ParseIP(ipAddress)
+
+	_, subnet1, _ := net.ParseCIDR("172.16.0.0/16")
+	_, subnet2, _ := net.ParseCIDR("172.19.0.0/16")
+
+	return subnet1.Contains(ip) || subnet2.Contains(ip)
+}
+
+func setCachedContent(path string, content []byte) {
+	cache.Lock()
+	defer cache.Unlock()
+
+	cache.data[path] = &cacheEntry{
+		content:   content,
+		timestamp: time.Now(),
+	}
+}
+
+func getCachedContent(path string) ([]byte, bool) {
+	cache.RLock()
+	defer cache.RUnlock()
+
+	if entry, found := cache.data[path]; found {
+		// Check if cache is valid within the 1 hour period
+		if time.Since(entry.timestamp) < 1*time.Hour {
+			return entry.content, true
+		}
+	}
+	return nil, false
+}
+
+func cachedHandler(reverseProxy http.HandlerFunc) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		// Check if the requester's IP falls within the exempted range
+		clientIP, _, _ := net.SplitHostPort(req.RemoteAddr)
+		if isIpInternal(clientIP) {
+			// If it's from your IPs, serve it using the reverse proxy without caching
+			reverseProxy(res, req)
+			return
+		}
+
+		// Try to serve from cache first
+		if content, found := getCachedContent(req.URL.Path); found {
+			if _, err := res.Write(content); err != nil {
+				// Log the error and possibly take further action
+				log.Printf("Error writing cached content to response: %v", err)
+			}
+			return
+		}
+
+		// Capture the response with a ResponseRecorder
+		rw := httptest.NewRecorder()
+		// Pass the request to the reverseProxy
+		reverseProxy(rw, req)
+
+		// Check and cache if response status is OK
+		if rw.Code == http.StatusOK {
+			setCachedContent(req.URL.Path, rw.Body.Bytes())
+			res.Header().Set("Content-Type", "application/json")
+			res.WriteHeader(http.StatusOK)
+			if _, err := res.Write(rw.Body.Bytes()); err != nil {
+				// Log the error and possibly take further action
+				log.Printf("Error writing response content to client: %v", err)
+			}
+		} else {
+			// If it's not OK, just replicate the recorded response
+			for k, values := range rw.Header() {
+				for _, v := range values {
+					res.Header().Add(k, v)
+				}
+			}
+			res.WriteHeader(rw.Code)
+			if _, err := rw.Body.WriteTo(res); err != nil {
+				// Log the error and possibly take further action
+				log.Printf("Error replicating response to client: %v", err)
+			}
+		}
+	}
+}
+
 func main() {
 	// Health check endpoint
 	http.HandleFunc("/proxy_health", serveHealthCheck)
 
 	// Reverse proxy endpoint
-	http.HandleFunc("/", newReverseProxyHandler(setupReverseProxy(target)))
+	reverseProxy := newReverseProxyHandler(setupReverseProxy(target))
+	http.HandleFunc("/nodeinfo/2.0.json", cachedHandler(reverseProxy))
+	http.HandleFunc("/", reverseProxy)
 
 	// Start a goroutine for printing statistics periodically
 	go func() {
