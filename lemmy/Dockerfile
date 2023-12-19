@@ -13,7 +13,7 @@ USER root
 #RUN apk update && apk add --no-cache bash
 COPY supervisord.conf /etc/supervisord.conf
 
-RUN apk update && apk add --no-cache supervisor
+RUN apk update && apk add --no-cache supervisor postgresql15-client
 RUN mkdir -p /var/log/supervisor
 CMD ["/usr/bin/supervisord -c /etc/supervisord.conf"]
 EXPOSE 8080
