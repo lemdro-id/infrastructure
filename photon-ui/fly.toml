@@ -13,10 +13,10 @@ primary_region = "sea"
   PUBLIC_INSTANCE_URL = "lemdro.id"
   PUBLIC_RANDOM_PLACEHOLDERS = false
   PUBLIC_SSR_ENABLED = true
+  PUBLIC_MIGRATE_COOKIE = true
 
 [http_service]
   internal_port = 3000
-  force_https = true
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
