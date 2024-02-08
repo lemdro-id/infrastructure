@@ -22,4 +22,9 @@
     # Whether or not smtp connections should use tls. Can be none, tls, or starttls
     tls_type: "tls"
   }
+
+  prometheus: {
+    bind: "0.0.0.0"
+    port: 10002
+  }
 }

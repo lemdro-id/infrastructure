@@ -102,3 +102,7 @@ primary_region = "sea"
   guest_path = "/config/config.hjson"
   local_path = "./config.hjson"
   processes = ["app", "scheduled"]
+
+[metrics]
+  port = 10002
+  path = "/metrics"
