@@ -85,8 +85,8 @@ primary_region = "sea"
     protocol = "http"
 
 [processes]
-  app = "/usr/bin/supervisord"
-  scheduled = "/usr/bin/supervisord"
+  app = "-c /etc/supervisord.conf"
+  scheduled = "-c /etc/supervisord.conf"
 
 [[files]]
   guest_path = "/etc/supervisord.conf"
