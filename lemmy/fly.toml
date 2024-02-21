@@ -7,45 +7,6 @@ primary_region = "sea"
   strategy = "canary"
 
 [[services]]
-  processes = ["scheduled"]
-  internal_port = 8080
-  protocol = "tcp"
-  auto_stop_machines = false
-  auto_start_machines = false
-  min_machines_running = 1
-  [services.concurrency]
-    type = "requests"
-    hard_limit = 1024
-    soft_limit = 896
-  [[services.ports]]
-    handlers = ["http"]
-    port = 80
-
-  [[services.http_checks]]
-    interval = "5s"
-    timeout = "1s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/nodeinfo/2.0.json"
-    protocol = "http"
-
-  [[services.http_checks]]
-    interval = "30s"
-    timeout = "2s"
-    grace_period = "15s"
-    method = "GET"
-    path = "/api/v3/community/list?type_=Local&sort=TopMonth&limit=1"
-    protocol = "http"
-
-  [[services.http_checks]]
-    interval = "2s"
-    timeout = "1s"
-    grace_period = "2s"
-    method = "GET"
-    path = "/proxy_health"
-    protocol = "http"
-
-[[services]]
   processes = ["app"]
   internal_port = 8080
   protocol = "tcp"
@@ -85,18 +46,8 @@ primary_region = "sea"
     protocol = "http"
 
 [processes]
-  app = "-c /etc/supervisord.conf"
-  scheduled = "-c /etc/supervisord.conf"
-
-[[files]]
-  guest_path = "/etc/supervisord.conf"
-  local_path = "./supervisord.conf"
-  processes = ["scheduled"]
-
-[[files]]
-  guest_path = "/etc/supervisord.conf"
-  local_path = "./supervisord.conf.noscheduled"
-  processes = ["app"]
+  app = "-c /etc/supervisord.conf.noscheduled"
+  scheduled = "-c /etc/supervisord.conf.scheduled"
 
 [[files]]
   guest_path = "/config/config.hjson"

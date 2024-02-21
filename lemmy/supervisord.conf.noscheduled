@@ -5,7 +5,7 @@ logfile_maxbytes=0
 user=root
 
 [program:lemmy]
-command=lemmy_server --disable-scheduled-tasks
+command=lemmy_server --disable-scheduled-tasks --disable-activity-sending
 user=lemmy
 priority=2
 stdout_logfile=/dev/fd/1

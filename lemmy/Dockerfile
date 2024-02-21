@@ -11,7 +11,8 @@ COPY config.hjson /config/config.hjson
 COPY update_instance_timeout.sh /update_instance_timeout.sh
 USER root
 #RUN apk update && apk add --no-cache bash
-COPY supervisord.conf /etc/supervisord.conf
+COPY supervisord.conf.scheduled /etc/supervisord.conf.scheduled
+COPY supervisord.conf.noscheduled /etc/supervisord.conf.noscheduled
 
 RUN apt update && apt install -y supervisor postgresql-client-15
 RUN mkdir -p /var/log/supervisor
