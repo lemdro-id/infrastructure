@@ -4,10 +4,10 @@ app = "lemdroid-photon-ui"
 primary_region = "sea"
 
 [deploy]
-  strategy = "canary"
+  strategy = "bluegreen"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:latest"
+  image = "ghcr.io/xyphyn/photon:v1.27.0"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"

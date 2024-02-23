@@ -10,7 +10,7 @@ primary_region = "sea"
   strategy = "bluegreen"
 
 [env]
-  HOSTNAME = "lemdro.id"
+  LEMMY_UI_HOST = "0.0.0.0:1234"
   LEMMY_UI_HTTPS = "false"
   LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
   LEMMY_UI_LEMMY_INTERNAL_HOST = "lemdroid-lemmy.flycast"
@@ -19,7 +19,7 @@ primary_region = "sea"
   internal_port = 1234
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   [http_service.concurrency]
     type = "requests"
     hard_limit = 1000
