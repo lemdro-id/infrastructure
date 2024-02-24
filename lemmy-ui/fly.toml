@@ -3,20 +3,17 @@
 app = "lemdroid-lemmy-ui"
 primary_region = "sea"
 
-[build]
-  image = "dessalines/lemmy-ui:0.19.3"
-
 [deploy]
-  strategy = "bluegreen"
+  strategy = "canary"
 
 [env]
-  LEMMY_UI_HOST = "0.0.0.0:1234"
+  LEMMY_UI_HOST = "127.0.0.1:1234"
   LEMMY_UI_HTTPS = "false"
   LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
   LEMMY_UI_LEMMY_INTERNAL_HOST = "lemdroid-lemmy.flycast"
 
 [http_service]
-  internal_port = 1234
+  internal_port = 8080
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
@@ -24,6 +21,14 @@ primary_region = "sea"
     type = "requests"
     hard_limit = 1000
     soft_limit = 800
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "1s"
+    method = "GET"
+    path = "/nginx_alive_check"
+    protocol = "http"
 
   [[http_service.checks]]
     interval = "30s"
