@@ -7,7 +7,7 @@ primary_region = "sea"
   strategy = "bluegreen"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:v1.27.1"
+  image = "ghcr.io/xyphyn/photon:v1.27.4"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"
