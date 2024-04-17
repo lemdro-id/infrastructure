@@ -1,68 +1,73 @@
-# fly.toml app configuration file generated for lemdroid-lemmy-postgres on 2023-12-12T13:31:34-05:00
+# fly.toml app configuration file generated for lemdroid-postgres on 2024-04-11T23:42:32-07:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = "lemdroid-lemmy-postgres"
-primary_region = "sea"
-
-[deploy]
-  strategy = "rolling"
+app = 'lemdroid-postgres'
+primary_region = 'sea'
 
 [env]
-  PRIMARY_REGION = "sea"
+  FLY_RESTORED_FROM = 'vol_0zy6r7q7my3vdjng'
+  PRIMARY_REGION = 'sea'
 
 [[mounts]]
-  source = "pg_data"
-  destination = "/data"
-  auto_extend_size_threshold = 0
+  source = 'pg_data'
+  destination = '/data'
+  initial_size = '20GB'
+  auto_extend_size_threshold = 85
+  auto_extend_size_increment = '2GB'
+  auto_extend_size_limit = '20GB'
 
 [[services]]
-  protocol = "tcp"
+  protocol = 'tcp'
   internal_port = 5432
   auto_start_machines = false
 
-  [[services.ports]]
+[[services.ports]]
     port = 5432
-    handlers = ["pg_tls"]
+    handlers = ['pg_tls']
+
   [services.concurrency]
-    type = "connections"
+    type = 'connections'
     hard_limit = 1000
     soft_limit = 1000
 
 [[services]]
-  protocol = "tcp"
+  protocol = 'tcp'
   internal_port = 5433
   auto_start_machines = false
 
-  [[services.ports]]
+[[services.ports]]
     port = 5433
-    handlers = ["pg_tls"]
+    handlers = ['pg_tls']
+
   [services.concurrency]
-    type = "connections"
+    type = 'connections'
     hard_limit = 1000
     soft_limit = 1000
 
 [checks]
   [checks.pg]
     port = 5500
-    type = "http"
-    interval = "15s"
-    timeout = "10s"
-    path = "/flycheck/pg"
+    type = 'http'
+    interval = '15s'
+    timeout = '10s'
+    path = '/flycheck/pg'
+
   [checks.role]
     port = 5500
-    type = "http"
-    interval = "15s"
-    timeout = "10s"
-    path = "/flycheck/role"
+    type = 'http'
+    interval = '15s'
+    timeout = '10s'
+    path = '/flycheck/role'
+
   [checks.vm]
     port = 5500
-    type = "http"
-    interval = "15s"
-    timeout = "10s"
-    path = "/flycheck/vm"
+    type = 'http'
+    interval = '15s'
+    timeout = '10s'
+    path = '/flycheck/vm'
 
 [[metrics]]
   port = 9187
-  path = "/metrics"
+  path = '/metrics'
