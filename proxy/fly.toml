@@ -6,9 +6,6 @@ primary_region = "sea"
 [deploy]
   strategy = "canary"
 
-[env]
-  HOSTNAME = "lemdro.id"
-
 [http_service]
   internal_port = 80
   auto_stop_machines = true
