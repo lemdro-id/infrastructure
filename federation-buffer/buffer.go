@@ -18,7 +18,7 @@ var (
 	listenPort      string = "8080"
 	mu              sync.Mutex
 	averageResponse time.Duration
-	responseSamples int64 // Fixed: declaration of responseSamples
+	responseSamples int64
 	previousSize    int
 	sizeChangeRate  int // Tracks how fast the queue size is changing
 	lastMeasurement time.Time
@@ -61,7 +61,7 @@ func EnqueueRequest(w http.ResponseWriter, r *http.Request) {
 func ForwardRequest() {
 	for dumpedRequest := range requestQueue {
 		client := &http.Client{}
-		startTime := time.Now() // Record the start time of the forwarding
+		startTime := time.Now()
 
 		// Reconstruct the request from the dumped bytes
 		buffer := bytes.NewBuffer(dumpedRequest)
@@ -100,12 +100,12 @@ func UpdateStats(duration time.Duration) {
 	newSize := GetRequestQueueLength()
 	currentTime := time.Now()
 
-	responseSamples++                                                                // Increment the count of samples
+	responseSamples++
 	averageResponse += (duration - averageResponse) / time.Duration(responseSamples) // Rolling average calculation
 
 	// Update rate if at least a second has passed since last measurement
 	if currentTime.Sub(lastMeasurement) >= time.Second {
-		sizeChangeRate = newSize - previousSize // Calculate size change rate per second
+		sizeChangeRate = newSize - previousSize
 		previousSize = newSize
 		lastMeasurement = currentTime
 	}
@@ -128,8 +128,8 @@ func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	go ForwardRequest() // Start the forwardRequest in its own goroutine
-	go PrintStats()     // Start printing stats periodically
+	go ForwardRequest()
+	go PrintStats()
 
 	http.HandleFunc("/inbox", EnqueueRequest)
 	http.HandleFunc("/proxy_health", serveHealthCheck)
