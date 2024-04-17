@@ -1,0 +1,36 @@
+# fly.toml app configuration file generated for federation-buffer on 2024-04-17T00:08:20-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'federation-buffer'
+primary_region = 'sea'
+
+[build]
+  [build.args]
+    GO_VERSION = '1.22.2'
+
+[env]
+  PORT = '8080'
+  FORWARD_HOST = 'lemdroid-lemmy.flycast'
+
+[http_service]
+  internal_port = 8080
+  force_https = false
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ['app']
+
+  [[http_service.checks]]
+    grace_period = "2s"
+    interval = "2s"
+    timeout = "1s"
+    method = "GET"
+    path = "/proxy_health"
+    protocol = "http"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1

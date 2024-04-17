@@ -15,6 +15,7 @@ import (
 var (
 	requestQueue    chan []byte
 	forwardHost     string
+	listenPort      string = "8080"
 	mu              sync.Mutex
 	averageResponse time.Duration
 	responseSamples int64 // Fixed: declaration of responseSamples
@@ -24,7 +25,7 @@ var (
 )
 
 func init() {
-	SetForwardHost()
+	SetForwardHostAndPort()
 	requestQueue = make(chan []byte, 10000) // buffer limit
 	lastMeasurement = time.Now()
 }
@@ -33,12 +34,15 @@ func GetRequestQueueLength() int {
 	return len(requestQueue)
 }
 
-func SetForwardHost() {
+func SetForwardHostAndPort() {
 	forwardHost = os.Getenv("FORWARD_HOST")
 	if forwardHost == "" {
 		panic("FORWARD_HOST environment variable must be set")
 	}
-
+	envPort := os.Getenv("PORT")
+	if envPort != "" {
+		listenPort = envPort
+	}
 }
 
 func EnqueueRequest(w http.ResponseWriter, r *http.Request) {
@@ -119,13 +123,18 @@ func PrintStats() {
 	}
 }
 
+func serveHealthCheck(res http.ResponseWriter, req *http.Request) {
+	res.WriteHeader(http.StatusOK)
+}
+
 func main() {
 	go ForwardRequest() // Start the forwardRequest in its own goroutine
 	go PrintStats()     // Start printing stats periodically
 
 	http.HandleFunc("/inbox", EnqueueRequest)
-	fmt.Println("Reverse proxy started. Listening on port 80...")
-	if err := http.ListenAndServe(":80", nil); err != nil {
+	http.HandleFunc("/proxy_health", serveHealthCheck)
+	fmt.Println("Reverse proxy started. Listening on port 8080...")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
 		os.Exit(1)
 	}

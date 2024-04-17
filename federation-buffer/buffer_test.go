@@ -33,7 +33,7 @@ func TestRequestForwardingFlow(t *testing.T) {
 	defer os.Unsetenv("FORWARD_HOST")
 
 	// Re-initialize to apply the test environment variables
-	SetForwardHost()
+	SetForwardHostAndPort()
 
 	// Start the forwarding goroutine
 	go ForwardRequest()
@@ -51,6 +51,7 @@ func TestRequestForwardingFlow(t *testing.T) {
 	// Ensure the `/inbox` endpoint is responding as expected
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "Expected HTTP 200 OK response")
 
+	time.Sleep(10 * time.Millisecond)
 	waitForQueueToBeEmpty(2 * time.Second)
 }
 
