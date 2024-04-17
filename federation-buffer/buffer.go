@@ -117,7 +117,7 @@ func PrintStats() {
 		select {
 		case <-ticker.C:
 			mu.Lock()
-			fmt.Printf("[Stats] Buffer Size: %d, Size Change Rate: %d/sec, Avg Response Time: %v\n", len(requestQueue), sizeChangeRate, averageResponse)
+			fmt.Printf("[%v] [Stats] Buffer Size: %d, Size Change Rate: %d/sec, Avg Response Time: %v\n", time.Now().Format("2006-01-02 15:04:05"), len(requestQueue), sizeChangeRate, averageResponse)
 			mu.Unlock()
 		}
 	}
