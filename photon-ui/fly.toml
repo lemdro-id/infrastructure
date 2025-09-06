@@ -7,14 +7,16 @@ primary_region = "sea"
   strategy = "bluegreen"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:v1.28.4"
+  image = "ghcr.io/xyphyn/photon:V2.0.0"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"
   PUBLIC_RANDOM_PLACEHOLDERS = false
-  PUBLIC_SSR_ENABLED = true
+  PUBLIC_SSR_ENABLED = false
   PUBLIC_MIGRATE_COOKIE = true
-
+  PUBLIC_DOCK_PANEL = true
+  PUBLIC_DOCK_TOP = true
+  
 [http_service]
   internal_port = 3000
   auto_stop_machines = true
@@ -23,14 +25,16 @@ primary_region = "sea"
 
  [http_service.concurrency]
     type = "requests"
-    hard_limit = 1024
-    soft_limit = 768
-  
+    #hard_limit = 512
+    #soft_limit = 384
+    hard_limit = 384
+    soft_limit = 192
+    
   [[http_service.checks]]
-    interval = "5s"
-    timeout = "1s"
+    interval = "30s"
+    timeout = "5s"
     grace_period = "1s"
     method = "GET"
-    path = "/"
+    path = "/login"
     protocol = "http"
 

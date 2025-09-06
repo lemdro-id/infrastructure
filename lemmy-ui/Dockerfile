@@ -1,4 +1,4 @@
-FROM dessalines/lemmy-ui:0.19.3
+FROM dessalines/lemmy-ui:0.19.11
 USER root
 RUN apk update && apk add --no-cache nginx supervisor
 COPY ./nginx.conf /etc/nginx/nginx.conf
