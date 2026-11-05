@@ -1,13 +1,19 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 2 machines, sjc, shared-cpu-1x / 256 MB (min 0, autostop). Hostname: m.lemdro.id (IPv6).
+# Previously ":latest"; pinned to the version live was running:
+#   ghcr.io/aeharding/voyager 2.23.2 (rev 33f1f9bf585a7380f70dc4f7d6ff59e5cfff5e28)
+#   digest sha256:4a509094478d71b1b377620222a2ac6145bc36dd5952d509f3031689d2cda8a8
 
 app = "lemdroid-voyager"
-primary_region = "sea"
+primary_region = "sjc"
 
 [deploy]
   strategy = "canary"
 
 [build]
-  image = "ghcr.io/aeharding/voyager:latest"
+  image = "ghcr.io/aeharding/voyager@sha256:4a509094478d71b1b377620222a2ac6145bc36dd5952d509f3031689d2cda8a8"
   
 [env]
   CUSTOM_LEMMY_SERVERS = "lemdro.id"
@@ -31,3 +37,8 @@ primary_region = "sea"
     method = "GET"
     path = "/posts/lemdro.id/local"
     protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

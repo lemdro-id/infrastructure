@@ -1,4 +1,11 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 4 machines: iad, fra, sjc x2 (one sjc standby), shared-cpu-1x / 512 MB.
+#   fly scale count 1 --region iad; fly scale count 1 --region fra; fly scale count 2 --region sjc
+# Image V2.1.1 digest sha256:c5a140bfa31800b879a8309789ca2cf260d02e947304407371437b1d6db0376e
+# Hostnames: p.lemdro.id, nu.lemdro.id, photon.lemdro.id. IPs: IPv6 + private flycast.
+# primary_region stays "sea" because that is what the live machines carry (PRIMARY_REGION), though none run there.
 
 app = "lemdroid-photon-ui"
 primary_region = "sea"
@@ -7,7 +14,7 @@ primary_region = "sea"
   strategy = "bluegreen"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:V2.0.0"
+  image = "ghcr.io/xyphyn/photon:V2.1.1"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"
@@ -38,3 +45,7 @@ primary_region = "sea"
     path = "/login"
     protocol = "http"
 
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"

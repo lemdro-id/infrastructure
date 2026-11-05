@@ -1,7 +1,14 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 1 machine, sjc, shared-cpu-4x / 1 GB + 2 GB swap, restart on-failure (max 10).
+# Image digest: sha256:b2f67facdc856ac69d2dd02a6fd42ae95485d7180ad4cbcc9ca348b5e5b8ee24 (built 2023-12-09)
+# Private only (flycast, no public IPs). Media in Backblaze B2; /mnt volume holds the sled metadata repo.
+# Secrets (names only): PICTRS__SERVER__API_KEY, PICTRS__STORE__ACCESS_KEY, PICTRS__STORE__SECRET_KEY
+# Upgrade to 0.5 + Postgres repo tracked in issue #7.
 
 app = "lemdroid-pictrs"
-primary_region = "sea"
+primary_region = "sjc"
 swap_size_mb = 2048
 
 [build]
@@ -44,3 +51,8 @@ swap_size_mb = 2048
     method = "GET"
     path = "/healthz"
     protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 4
+  memory = "1gb"

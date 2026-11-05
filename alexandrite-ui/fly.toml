@@ -2,12 +2,18 @@
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 2 machines, sjc, shared-cpu-1x / 256 MB (min 0, autostop). IPv6 only.
+# Hostnames: a.lemdro.id; alexandrite.lemdro.id cert is "Awaiting configuration" (DNS not pointed).
+# Previously ":latest"; pinned to the version live was running:
+#   ghcr.io/sheodox/alexandrite 0.8.20 (rev 452a1805bae5cfefa0606eaa2abe0ffee23ef540)
+#   digest sha256:e428c2b3f00e3a3ce8add5db5ec07aa35417e2fbb54a57cce5f887ab51820dbe
 
 app = "lemdroid-alexandrite-ui"
-primary_region = "sea"
+primary_region = "sjc"
 
 [build]
-  image = "ghcr.io/sheodox/alexandrite:latest"
+  image = "ghcr.io/sheodox/alexandrite@sha256:e428c2b3f00e3a3ce8add5db5ec07aa35417e2fbb54a57cce5f887ab51820dbe"
 
 [deploy]
   strategy = "canary"
@@ -36,3 +42,8 @@ primary_region = "sea"
     method = "GET"
     path = "/"
     protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

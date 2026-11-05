@@ -1,7 +1,15 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 2 machines, sjc, shared-cpu-1x / 256 MB, restart on-failure (max 10).
+#   fly scale count 2 --region sjc
+# Deployed image: registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
+#   digest sha256:d905b66694e9b98f43849bfe4db9271e007ce489fa63e11f5ff2e8aaee177597
+#   base image label: lemmy-ui 0.19.11 (matches Dockerfile)
+# Hostname: l.lemdro.id. IPs: shared public IPv6 + private flycast.
 
 app = "lemdroid-lemmy-ui"
-primary_region = "sea"
+primary_region = "sjc"
 
 [deploy]
   strategy = "canary"
@@ -10,7 +18,8 @@ primary_region = "sea"
   LEMMY_UI_HOST = "127.0.0.1:1234"
   LEMMY_UI_HTTPS = "false"
   LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
-  LEMMY_UI_LEMMY_INTERNAL_HOST = "[fdaa:2:735c:a7b:177d:0:a:a02]:8080"
+  # Lemmy backend on the VPS, reached over the private WireGuard peer in the Fly 6PN network
+  LEMMY_UI_LEMMY_INTERNAL_HOST = "[fdaa:2:735c:a7b:910f:0:a:202]:8080"
 
 [http_service]
   internal_port = 8080
@@ -38,3 +47,8 @@ primary_region = "sea"
     method = "GET"
     path = "/login"
     protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

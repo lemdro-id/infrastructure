@@ -1,10 +1,14 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 2 machines, sjc, shared-cpu-1x / 256 MB (min 0, autostop). Hostname: old.lemdro.id (IPv6).
+# Previously ":latest"; the image has no version label, so it is pinned by the digest live was running.
 
 app = "lemdroid-mlmym"
-primary_region = "sea"
+primary_region = "sjc"
 
 [build]
-  image = "ghcr.io/rystaf/mlmym:latest"
+  image = "ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e"
 
 [deploy]
   strategy = "canary"
@@ -33,3 +37,8 @@ primary_region = "sea"
     method = "GET"
     path = "/"
     protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

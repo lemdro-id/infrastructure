@@ -1,7 +1,15 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 4 machines: iad, fra, sjc x2 (one sjc standby), shared-cpu-1x / 256 MB, restart on-failure (max 10).
+#   fly scale count 1 --region iad; fly scale count 1 --region fra; fly scale count 2 --region sjc
+# Deployed image: registry.fly.io/lemdroid-lemmy-proxy:deployment-01KMXBMQ9220TYWETBHREA4X7V
+#   digest sha256:00db18448fe6cb598aa565dab689b11deabda19e8818d9c1922d4936c85faacd
+#   NOTE: deployed image is newer than the Dockerfile/nginx.conf in this directory (source to be pushed).
+# Hostname: lemdro.id. IPs: dedicated IPv4 + IPv6.
 
 app = "lemdroid-lemmy-proxy"
-primary_region = "sea"
+primary_region = "sjc"
 
 [deploy]
   strategy = "canary"
@@ -55,3 +63,8 @@ primary_region = "sea"
     interval = "15s"
     timeout = "2s"
     grace_period = "1s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"
