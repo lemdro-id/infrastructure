@@ -2,6 +2,12 @@
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
+# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Live: 1 machine, sjc, shared-cpu-1x / 1 GB, always on, restart on-failure (max 10).
+# Deployed image: registry.fly.io/federation-buffer:deployment-01KBDWR52BDZF2JRX8KQ721A2V
+#   digest sha256:2fc6cfa68801518c6f0957e193bc328af977ac2e319d68eb3200a419c1811086
+#   NOTE: built 2025-12; whether buffer.go here matches it is unverified (source to be confirmed/pushed).
+# IPs: IPv6 + private flycast. primary_region stays "sea" because that is what the live machine carries.
 
 app = 'federation-buffer'
 primary_region = 'sea'
@@ -12,7 +18,9 @@ primary_region = 'sea'
 
 [env]
   PORT = '8080'
-  FORWARD_HOST = 'lemdroid-lemmy.flycast'
+  # Lemmy backend on the VPS (private WireGuard peer in the Fly 6PN network);
+  # previously the now-suspended lemdroid-lemmy.flycast
+  FORWARD_HOST = '[fdaa:2:735c:a7b:910f:0:a:202]:8080'
 
 [http_service]
   internal_port = 8080
