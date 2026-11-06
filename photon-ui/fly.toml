@@ -3,7 +3,7 @@
 # Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
 # Live: 4 machines: iad, fra, sjc x2 (one sjc standby), shared-cpu-1x / 512 MB.
 #   fly scale count 1 --region iad; fly scale count 1 --region fra; fly scale count 2 --region sjc
-# Image V2.1.1 digest sha256:c5a140bfa31800b879a8309789ca2cf260d02e947304407371437b1d6db0376e
+# Image v2.4.3 digest sha256:141a467315ef061fdac06ca4cb484f1014cea2a2651061ba4ecec2a62fc98d7e
 # Hostnames: p.lemdro.id, nu.lemdro.id, photon.lemdro.id. IPs: IPv6 + private flycast.
 # primary_region stays "sea" because that is what the live machines carry (PRIMARY_REGION), though none run there.
 
@@ -14,7 +14,7 @@ primary_region = "sea"
   strategy = "bluegreen"
 
 [build]
-  image = "ghcr.io/xyphyn/photon:V2.1.1"
+  image = "ghcr.io/xyphyn/photon:v2.4.3@sha256:141a467315ef061fdac06ca4cb484f1014cea2a2651061ba4ecec2a62fc98d7e"
 
 [env]
   PUBLIC_INSTANCE_URL = "lemdro.id"
