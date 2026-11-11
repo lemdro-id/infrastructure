@@ -5,7 +5,7 @@
 #   fly scale count 1 --region iad; fly scale count 1 --region fra; fly scale count 2 --region sjc
 # Deployed image: registry.fly.io/lemdroid-lemmy-proxy:deployment-01KMXBMQ9220TYWETBHREA4X7V
 #   digest sha256:00db18448fe6cb598aa565dab689b11deabda19e8818d9c1922d4936c85faacd
-#   NOTE: deployed image is newer than the Dockerfile/nginx.conf in this directory (source to be pushed).
+#   Built 2026-03-29 from the Dockerfile/nginx.conf in this directory.
 # Hostname: lemdro.id. IPs: dedicated IPv4 + IPv6.
 
 app = "lemdroid-lemmy-proxy"
