@@ -29,7 +29,7 @@ User / fediverse ──► Cloudflare ──► Fly.io edge
 - Outbound federation leaves from the VPS directly.
 
 ## Backups
-- PostgreSQL: continuous WAL streaming plus weekly full backups with **barman** to a server off-site from the VPS (operator-run). It's also included in that server's own nightly backups.
+- PostgreSQL: a nightly logical `pg_dump` (9 PM Pacific) pulled over the private network to a server off-site from the VPS (operator-run). It's included in that server's own nightly backups, which are copied offsite weekly. (Replaced barman WAL streaming + weekly fulls on 2026-11-05.)
 - pict-rs metadata: Fly volume snapshots (daily, 5-day retention). Media: Backblaze B2.
 
 ## Not yet captured here (roadmap)
