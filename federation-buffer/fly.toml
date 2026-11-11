@@ -6,7 +6,7 @@
 # Live: 1 machine, sjc, shared-cpu-1x / 1 GB, always on, restart on-failure (max 10).
 # Deployed image: registry.fly.io/federation-buffer:deployment-01KBDWR52BDZF2JRX8KQ721A2V
 #   digest sha256:2fc6cfa68801518c6f0957e193bc328af977ac2e319d68eb3200a419c1811086
-#   NOTE: built 2025-12; whether buffer.go here matches it is unverified (source to be confirmed/pushed).
+#   Built 2025-12-01 from the buffer.go in this directory.
 # IPs: IPv6 + private flycast. primary_region stays "sea" because that is what the live machine carries.
 
 app = 'federation-buffer'
