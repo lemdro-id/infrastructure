@@ -1,0 +1,9 @@
+# WireGuard configs and keys: never commit (they contain private keys)
+wireguard/**/*.conf
+wireguard/*.conf
+lemdroid-lemmy.conf
+dedicated-database-server
+*.key
+
+# Local env files
+.env*
