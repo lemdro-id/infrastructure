@@ -1,0 +1,38 @@
+# pict-rs on the backend VPS (host `lemdroid`), next to Lemmy + PostgreSQL 16.
+# Deployed at /root/pictrs/ on the VPS (separate compose project from /root/lemmy).
+# Replaces the Fly app `lemdroid-pictrs` (0.4.6 + sled), see legacy/pictrs/.
+#
+# - Repo: PostgreSQL database `pictrs` (role `pictrs`) on 127.0.0.1:5432.
+# - Store: Backblaze B2 bucket `lemdroid` (unchanged; same objects as on Fly).
+# - Listens on 127.0.0.1:8180 only (host networking); Lemmy reaches it at http://127.0.0.1:8180/.
+#   Nothing public: /pictrs traffic still enters via lemdroid-lemmy-proxy -> Lemmy.
+# - Secrets live only in /root/pictrs/pictrs.env on the VPS (mode 600, not in git); see pictrs.env.example.
+services:
+  pictrs:
+    image: docker.io/asonix/pictrs:0.5.25@sha256:6c64d7d282b67931716861b92bce48392791b57b571f5b7bbe132a10b4f0c39e
+    restart: always
+    network_mode: host
+    env_file: ./pictrs.env
+    environment:
+      PICTRS__SERVER__ADDRESS: "127.0.0.1:8180"
+      PICTRS__REPO__TYPE: "postgres"
+      PICTRS__STORE__TYPE: "object_storage"
+      PICTRS__STORE__ENDPOINT: "https://s3.us-west-004.backblazeb2.com"
+      PICTRS__STORE__BUCKET_NAME: "lemdroid"
+      PICTRS__STORE__REGION: "us-west-004"
+      PICTRS__STORE__USE_PATH_STYLE: "false"
+      PICTRS__MEDIA__VIDEO__VIDEO_CODEC: "vp9"
+      # GIF limits from 0.4 (256x256) dropped: 0.5 rejects animations over the limit instead of
+      # transcoding them, so 0.5 defaults apply (1920x1920, 900 frames, 40 MB; proxy caps uploads at 20 MB).
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8180/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "4"

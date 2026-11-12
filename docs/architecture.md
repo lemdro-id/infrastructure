@@ -8,29 +8,29 @@ User / fediverse ──► Cloudflare ──► Fly.io edge
                                      │    ├─ /inbox             ─► federation-buffer ─┐
                                      │    └─ /api, /pictrs, ActivityPub, nodeinfo ───┤
                                      ├─ lemmy-ui, photon, voyager, mlmym, alexandrite │ (own subdomains)
-                                     └─ lemdroid-pictrs (private) ◄──────────────────┤──► Backblaze B2
                                                                                       ▼
                                    Fly private network (6PN) ══ WireGuard peer ══► Backend VPS
                                                                                    ├─ Lemmy 0.19.21 (Docker Compose)
-                                                                                   └─ PostgreSQL 16
+                                                                                   ├─ pict-rs 0.5 (Docker Compose) ──► Backblaze B2
+                                                                                   └─ PostgreSQL 16 (lemmy + pictrs DBs)
 ```
 
 ## Fly.io (org `lemdroid`)
 - **Entry:** `lemdroid-lemmy-proxy` serves `lemdro.id` and routes UI traffic to frontends, `/inbox` to `federation-buffer`, and API, pict-rs and federation traffic to the Lemmy backend.
 - **Frontends:** lemmy-ui, Photon, Voyager, mlmym, Alexandrite, each with its own subdomain, autostopping when idle.
 - **federation-buffer:** always-on Go service that accepts inbound federation and forwards it to Lemmy, so inbound activity isn't dropped during backend restarts.
-- **pict-rs:** private only (flycast). 0.4.6 with a sled metadata repo on a Fly volume; media in Backblaze B2. Upgrade to 0.5 + Postgres repo planned (#7).
 - Fly apps reach the backend at a fixed private 6PN address (see `LEMMY_UI_LEMMY_INTERNAL_HOST` / `FORWARD_HOST`).
 
 ## Backend VPS (not yet managed in this repo)
 - Debian 12 VPS joined to the Fly private network as a **WireGuard peer** (the `fly wireguard create` mechanism). Lemmy listens only on that private address.
 - **Lemmy 0.19.21** via Docker Compose (host networking). Its `config.hjson` (secrets) isn't stored here.
-- **PostgreSQL 16** (native), local to Lemmy.
+- **pict-rs 0.5** via Docker Compose (`pictrs/`), host networking on `127.0.0.1:8180`; Lemmy proxies `/pictrs` to it. Metadata in the `pictrs` database, media in Backblaze B2.
+- **PostgreSQL 16** (native), local to Lemmy and pict-rs (databases `lemmy`, `pictrs`).
 - Outbound federation leaves from the VPS directly.
 
 ## Backups
-- PostgreSQL: a nightly logical `pg_dump` (9 PM Pacific) pulled over the private network to a server off-site from the VPS (operator-run). It's included in that server's own nightly backups, which are copied offsite weekly. (Replaced barman WAL streaming + weekly fulls on 2026-11-05.)
-- pict-rs metadata: Fly volume snapshots (daily, 5-day retention). Media: Backblaze B2.
+- PostgreSQL: a nightly logical `pg_dump` of `lemmy` and `pictrs` (9 PM Pacific) pulled over the private network to a server off-site from the VPS (operator-run). It's included in that server's own nightly backups, which are copied offsite weekly. (Replaced barman WAL streaming + weekly fulls on 2026-11-05.)
+- pict-rs metadata: the `pictrs` database, in the same nightly dump. Media: Backblaze B2.
 
 ## Not yet captured here (roadmap)
 1. VPS configuration as code (OS, Postgres config/pg_hba, Lemmy compose, WireGuard peer), likely via Ansible.

@@ -14,7 +14,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 | `voyager/` | `lemdroid-voyager` | Voyager (`m.lemdro.id`) |
 | `mlmym/` | `lemdroid-mlmym` | old-reddit style UI (`old.lemdro.id`) |
 | `alexandrite-ui/` | `lemdroid-alexandrite-ui` | Alexandrite (`a.lemdro.id`) |
-| `pictrs/` | `lemdroid-pictrs` | pict-rs image service (private), media in Backblaze B2 |
+| `pictrs/` | backend VPS (Compose) | pict-rs 0.5 image service (localhost only), metadata in Postgres, media in Backblaze B2 |
 | `legacy/` | suspended | old in-Fly Lemmy backend and Fly Postgres |
 
 ## Postgres
