@@ -1,10 +1,11 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
-# Live: 2 machines, sjc, shared-cpu-1x / 256 MB (min 0, autostop). Hostname: m.lemdro.id (IPv6).
-# Previously ":latest"; pinned to the version live was running:
-#   ghcr.io/aeharding/voyager 2.23.2 (rev 33f1f9bf585a7380f70dc4f7d6ff59e5cfff5e28)
-#   digest sha256:4a509094478d71b1b377620222a2ac6145bc36dd5952d509f3031689d2cda8a8
+# 2 machines, sjc, shared-cpu-1x / 256 MB (min 0, autostop). Hostname: m.lemdro.id (IPv6).
+# Image: ghcr.io/aeharding/voyager:2.49.1
+#   index digest sha256:8e9d9ed499e3dc9069f8f385eaa5f47d06fc2daa62c4e0ac7f136ea5e73a9057
+# Previous live (2.23.2, rollback):
+#   ghcr.io/aeharding/voyager@sha256:4a509094478d71b1b377620222a2ac6145bc36dd5952d509f3031689d2cda8a8
+#   rev 33f1f9bf585a7380f70dc4f7d6ff59e5cfff5e28
 
 app = "lemdroid-voyager"
 primary_region = "sjc"
@@ -13,7 +14,7 @@ primary_region = "sjc"
   strategy = "canary"
 
 [build]
-  image = "ghcr.io/aeharding/voyager@sha256:4a509094478d71b1b377620222a2ac6145bc36dd5952d509f3031689d2cda8a8"
+  image = "ghcr.io/aeharding/voyager:2.49.1@sha256:8e9d9ed499e3dc9069f8f385eaa5f47d06fc2daa62c4e0ac7f136ea5e73a9057"
   
 [env]
   CUSTOM_LEMMY_SERVERS = "lemdro.id"
