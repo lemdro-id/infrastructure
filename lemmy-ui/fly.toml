@@ -10,7 +10,12 @@
 # that, so 512 MB should still fit Node + Anubis + nginx. Watch RSS on the canary
 # and bump to 768 MB if it is tight.
 #   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
-# Rollback image (0.19.21, 512 MB, no Anubis — currently live):
+# Sticky routing: nginx pins each visitor to one machine with a lui_machine
+#   cookie and fly-replay, because Anubis keeps pending challenges in memory
+#   per machine (see nginx.conf, start-nginx.sh).
+# Rollback image (v80: Anubis, no sticky routing):
+#   registry.fly.io/lemdroid-lemmy-ui:deployment-01M78M7S6BG6WMRKJTYD39TX37
+# Older rollback (0.19.21, 512 MB, no Anubis):
 #   registry.fly.io/lemdroid-lemmy-ui:deployment-01M77FBWJRT3Y70YWP9JTH60XS
 # Previous live (0.19.11, rollback):
 #   registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
