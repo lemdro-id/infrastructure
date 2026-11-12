@@ -1,11 +1,12 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
-# Live: 2 machines, sjc, shared-cpu-1x / 256 MB, restart on-failure (max 10).
+# 2 machines, sjc, shared-cpu-1x / 256 MB, restart on-failure (max 10).
 #   fly scale count 2 --region sjc
-# Deployed image: registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
+# Image: dessalines/lemmy-ui:0.19.21 (Debian/node:current-slim; see Dockerfile)
+#   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
+# Previous live (0.19.11, rollback):
+#   registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
 #   digest sha256:d905b66694e9b98f43849bfe4db9271e007ce489fa63e11f5ff2e8aaee177597
-#   base image label: lemmy-ui 0.19.11 (matches Dockerfile)
 # Hostname: l.lemdro.id. IPs: shared public IPv6 + private flycast.
 
 app = "lemdroid-lemmy-ui"
