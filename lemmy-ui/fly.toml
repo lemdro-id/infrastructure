@@ -3,13 +3,23 @@
 # 2 machines, sjc, shared-cpu-1x / 512 MB, restart on-failure (max 10).
 #   fly scale count 2 --region sjc
 # Image: dessalines/lemmy-ui:0.19.21 (Debian/node:current-slim; see Dockerfile)
+#   plus Anubis v1.28.2 sitting between nginx and Node.
 # Memory is 512 MB because Node 26 + Debian OOM'd under concurrent SSR at 256 MB
 # (off-path repro 2026-11-12: 20 concurrent /login timed out, then node was OOM-killed).
+# Anubis is documented to be comfortable in ~128 MiB; expected RSS is well under
+# that, so 512 MB should still fit Node + Anubis + nginx. Watch RSS on the canary
+# and bump to 768 MB if it is tight.
 #   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
+# Rollback image (0.19.21, 512 MB, no Anubis — currently live):
+#   registry.fly.io/lemdroid-lemmy-ui:deployment-01M77FBWJRT3Y70YWP9JTH60XS
 # Previous live (0.19.11, rollback):
 #   registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
 #   digest sha256:d905b66694e9b98f43849bfe4db9271e007ce489fa63e11f5ff2e8aaee177597
 # Hostname: l.lemdro.id. IPs: shared public IPv6 + private flycast.
+#
+# Secret (set with `fly secrets set --stage`, never committed):
+#   ED25519_PRIVATE_KEY_HEX   64-char hex, from `openssl rand -hex 32`.
+#   Shared across both machines so a challenge cookie issued on one is valid on the other.
 
 app = "lemdroid-lemmy-ui"
 primary_region = "sjc"
@@ -42,14 +52,19 @@ primary_region = "sjc"
     path = "/nginx_alive_check"
     protocol = "http"
 
+  # Hits Node /login directly (nginx /node_alive_check), bypassing Anubis.
+  # Anubis returns HTTP 200 for a challenge page, so checking /login through
+  # Anubis would pass even when Node is down.
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
-    grace_period = "5s"
+    grace_period = "15s"
     restart_limit = 0
     method = "GET"
-    path = "/login"
+    path = "/node_alive_check"
     protocol = "http"
+    [http_service.checks.headers]
+      X-Lemmy-UI-Healthcheck = "1"
 
 [[vm]]
   cpu_kind = "shared"

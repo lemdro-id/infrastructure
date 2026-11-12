@@ -1,0 +1,136 @@
+# Anubis policy for l.lemdro.id (lemmy-ui 0.19.21).
+# (data)/... imports come from the policy snippets embedded in the Anubis
+# binary, not from this repo. See https://anubis.techaro.lol/docs/admin/policies
+#
+# Design notes:
+# - Good search crawlers are allowed only when their User-Agent *and* source
+#   IP match the official ranges (e.g. Googlebot). A fake Chrome UA is not enough.
+# - GeoIP / ASN weight rules from the default policy are intentionally omitted.
+#   They do nothing without a MaxMind DB, and the default ASN list includes
+#   Cloudflare (AS13335). Every request to this host arrives via Cloudflare,
+#   so enabling that rule later would add +10 weight to all real users.
+# - Open Graph passthrough is off. When enabled without an override, every
+#   challenge fetches the URL from Node to scrape og: tags. This crawl is
+#   almost all unique /post/<id>/<comment> URLs, so that would send the flood
+#   straight into SSR. A static override is an option if we want generic
+#   previews later without hitting Node.
+
+bots:
+  # Pathological / aggressive scrapers, Cloudflare Workers, domain fronting
+  - import: (data)/bots/_deny-pathological.yaml
+  - import: (data)/bots/aggressive-brazilian-scrapers.yaml
+  - import: (data)/common/domain-fronting.yaml
+
+  # Block known AI/LLM crawlers by name
+  - import: (data)/meta/ai-block-aggressive.yaml
+
+  # Search engine crawlers to allow (UA + official IP ranges):
+  # Google, Apple, Bing, DuckDuckGo, Qwant, Internet Archive, Kagi,
+  # Marginalia, Mojeek, Common Crawl, Wikimedia Citoid, Yandex, Arquivo.pt
+  - import: (data)/crawlers/_allow-good.yaml
+
+  # Challenge Firefox AI previews; block xAI's scraper
+  - import: (data)/clients/x-firefox-ai.yaml
+  - import: (data)/crawlers/xai.yaml
+
+  # /.well-known/, /favicon.ico, /robots.txt, /sitemap.xml
+  - import: (data)/common/keep-internet-working.yaml
+
+  # lemmy-ui 0.19.21 asset and PWA paths (see LemmyNet/lemmy-ui server/index.tsx).
+  # These are cheap compared to SSR and should not be challenged.
+  - name: lemmy-ui-static
+    path_regex: ^/static/
+    action: ALLOW
+  - name: lemmy-ui-css
+    path_regex: ^/css/
+    action: ALLOW
+  - name: lemmy-ui-service-worker
+    path_regex: ^/service-worker\.js$
+    action: ALLOW
+  - name: lemmy-ui-manifest
+    path_regex: ^/manifest\.webmanifest$
+    action: ALLOW
+
+  # Belt and suspenders: nginx already sends /api/ to the Lemmy backend and
+  # /feeds/ to a 301 on lemdro.id. /pictrs/ is not served on this host
+  # (images go to lemdro.id via LEMMY_UI_LEMMY_EXTERNAL_HOST).
+  - name: lemmy-api
+    path_regex: ^/api/
+    action: ALLOW
+  - name: lemmy-pictrs
+    path_regex: ^/pictrs/
+    action: ALLOW
+  - name: lemmy-feeds
+    path_regex: ^/feeds/
+    action: ALLOW
+
+  # Everything else (including Mozilla/Chrome-like UAs used by the current
+  # crawl) picks up +10 weight, which the thresholds below turn into a
+  # difficulty-2 proof-of-work. Unlike the upstream default, this is not
+  # limited to a Mozilla/Opera User-Agent, so a non-browser scraper that
+  # skipped the allow/deny lists is still challenged.
+  - name: generic-request
+    path_regex: ^.*$
+    action: WEIGH
+    weight:
+      adjust: 10
+
+dnsbl: false
+
+# Do not enable passthrough (see header comment). override would be safe
+# because GetOGTags returns it without contacting Node.
+openGraph:
+  enabled: false
+  considerHost: false
+  ttl: 24h
+
+# Anubis returns HTTP 200 for both challenge and deny pages on purpose
+# (aggressive scrapers keep going if they see 4xx/5xx). Fly health checks
+# must not use a path that can return a challenge.
+status_codes:
+  CHALLENGE: 200
+  DENY: 200
+
+store:
+  backend: memory
+  parameters: {}
+
+# Same thresholds as Anubis v1.28.2's default policy.
+# weight 10 (this policy's generic-request) → moderate-suspicion → fast PoW, difficulty 2.
+thresholds:
+  - name: minimal-suspicion
+    expression: weight <= 0
+    action: ALLOW
+  - name: mild-suspicion
+    expression:
+      all:
+        - weight > 0
+        - weight < 10
+    action: CHALLENGE
+    challenge:
+      algorithm: metarefresh
+      difficulty: 1
+  - name: moderate-suspicion
+    expression:
+      all:
+        - weight >= 10
+        - weight < 20
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 2
+  - name: mild-proof-of-work
+    expression:
+      all:
+        - weight >= 20
+        - weight < 30
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 4
+  - name: extreme-suspicion
+    expression: weight >= 30
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 6
