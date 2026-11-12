@@ -29,9 +29,8 @@ bots:
   # Marginalia, Mojeek, Common Crawl, Wikimedia Citoid, Yandex, Arquivo.pt
   - import: (data)/crawlers/_allow-good.yaml
 
-  # Challenge Firefox AI previews; block xAI's scraper
+  # Challenge Firefox AI previews
   - import: (data)/clients/x-firefox-ai.yaml
-  - import: (data)/crawlers/xai.yaml
 
   # /.well-known/, /favicon.ico, /robots.txt, /sitemap.xml
   - import: (data)/common/keep-internet-working.yaml
