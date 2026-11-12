@@ -16,7 +16,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* /tmp/anubis.tgz /tmp/anubis-${ANUBIS_VERSION}-linux-amd64
 COPY ./nginx.conf /etc/nginx/nginx.conf
 COPY supervisord.conf /etc/supervisord.conf
-COPY start-nginx.sh /usr/local/bin/start-nginx.sh
+COPY start-nginx.sh lui-peers.sh lui-peers.js /usr/local/bin/
 COPY anubis-botPolicies.yaml /etc/anubis/botPolicies.yaml
 RUN mkdir -p /var/log/supervisor
 # Debian's supervisor package defaults to /etc/supervisor/supervisord.conf, so pass -c.
