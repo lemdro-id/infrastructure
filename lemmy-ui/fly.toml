@@ -1,8 +1,10 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# 2 machines, sjc, shared-cpu-1x / 256 MB, restart on-failure (max 10).
+# 2 machines, sjc, shared-cpu-1x / 512 MB, restart on-failure (max 10).
 #   fly scale count 2 --region sjc
 # Image: dessalines/lemmy-ui:0.19.21 (Debian/node:current-slim; see Dockerfile)
+# Memory is 512 MB because Node 26 + Debian OOM'd under concurrent SSR at 256 MB
+# (off-path repro 2026-11-12: 20 concurrent /login timed out, then node was OOM-killed).
 #   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
 # Previous live (0.19.11, rollback):
 #   registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
@@ -52,4 +54,4 @@ primary_region = "sjc"
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory = "256mb"
+  memory = "512mb"
