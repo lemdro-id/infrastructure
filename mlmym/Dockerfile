@@ -4,8 +4,16 @@ USER root
 # tarball sha256 from the GitHub release asset digest; verified 2026-11-12 for lemmy-ui.
 ARG ANUBIS_VERSION=1.28.2
 ARG ANUBIS_TARBALL_SHA256=69fa671d5438e4f54a50128228cf8c901611fea0ef5b25ad33f8514d8d24fe13
-RUN apt-get update \
- && apt-get install -y --no-install-recommends nginx supervisor ca-certificates curl dnsutils \
+# Bullseye LTS ended 2026-08-31; security packages 404 on deb.debian.org
+# (observed 2026-11-13). Use the archive and ignore expired Release files.
+RUN printf '%s\n' \
+      'deb http://archive.debian.org/debian bullseye main' \
+      'deb http://archive.debian.org/debian bullseye-updates main' \
+      'deb http://archive.debian.org/debian-security bullseye-security main' \
+      > /etc/apt/sources.list \
+ && rm -f /etc/apt/sources.list.d/* \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
+ && apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends nginx supervisor ca-certificates curl dnsutils \
  && curl -fsSL -o /tmp/anubis.tgz \
       "https://github.com/TecharoHQ/anubis/releases/download/v${ANUBIS_VERSION}/anubis-${ANUBIS_VERSION}-linux-amd64.tar.gz" \
  && echo "${ANUBIS_TARBALL_SHA256}  /tmp/anubis.tgz" | sha256sum -c - \
