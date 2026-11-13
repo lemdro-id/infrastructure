@@ -19,10 +19,10 @@ txt="$(dig +short +time=2 +tries=2 TXT "vms.${app}.internal" | tr -d '"' | tr '\
 ids=""
 old_ifs=$IFS
 IFS=','
-# shellcheck disable=SC2086
+# While IFS is comma, "set -- $entry" will not split "id region" on spaces,
+# and "id region" fails the hex check. Take the first word instead.
 for entry in $txt; do
-  set -- $entry
-  id="${1:-}"
+  id="${entry%% *}"
   case "$id" in
     *[!0-9a-f]*|'') ;;
     *) ids="$ids $id" ;;
