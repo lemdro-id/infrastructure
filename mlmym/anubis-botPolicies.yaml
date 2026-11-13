@@ -1,0 +1,138 @@
+# Anubis policy for old.lemdro.id (mlmym, Fly app lemdroid-mlmym).
+# (data)/... imports come from the policy snippets embedded in the Anubis
+# binary, not from this repo. See https://anubis.techaro.lol/docs/admin/policies
+#
+# Design notes:
+# - Good search crawlers are allowed only when their User-Agent *and* source
+#   IP match the official ranges (e.g. Googlebot). A fake Chrome UA is not enough.
+# - GeoIP / ASN weight rules from the default policy are intentionally omitted.
+#   They do nothing without a MaxMind DB, and the default ASN list includes
+#   Cloudflare (AS13335). Every request to this host arrives via Cloudflare,
+#   so enabling that rule later would add +10 weight to all real users.
+# - Open Graph passthrough is off. When enabled without an override, every
+#   challenge fetches the URL from mlmym to scrape og: tags. The current crawl
+#   is almost all unique /post/<id> URLs, so that would send the flood straight
+#   into SSR.
+# - Difficulty matches l.lemdro.id's *effective* difficulty 4. On l.lemdro.id,
+#   browser-like requests landed at weight 25 (generic-request +10 plus +15
+#   from an imported snippet) and hit mild-proof-of-work (fast, difficulty 4).
+#   To guarantee the same even if that extra weight does not apply here,
+#   moderate-suspicion (weight 10–19, generic-request alone) is also difficulty 4.
+#   How to raise later: see the thresholds comment below.
+
+bots:
+  # Pathological / aggressive scrapers, Cloudflare Workers, domain fronting
+  - import: (data)/bots/_deny-pathological.yaml
+  - import: (data)/bots/aggressive-brazilian-scrapers.yaml
+  - import: (data)/common/domain-fronting.yaml
+
+  # Block known AI/LLM crawlers by name
+  - import: (data)/meta/ai-block-aggressive.yaml
+
+  # Search engine crawlers to allow (UA + official IP ranges):
+  # Google, Apple, Bing, DuckDuckGo, Qwant, Internet Archive, Kagi,
+  # Marginalia, Mojeek, Common Crawl, Wikimedia Citoid, Yandex, Arquivo.pt
+  - import: (data)/crawlers/_allow-good.yaml
+
+  # Challenge Firefox AI previews
+  - import: (data)/clients/x-firefox-ai.yaml
+
+  # /.well-known/, /favicon.ico, /robots.txt, /sitemap.xml
+  - import: (data)/common/keep-internet-working.yaml
+
+  # mlmym static assets (rystaf/mlmym, single-instance mode with LEMMY_DOMAIN set).
+  # public/ is served at /_/static/; /icon.jpg is the site icon.
+  - name: mlmym-static
+    path_regex: ^/_/static/
+    action: ALLOW
+  - name: mlmym-icon
+    path_regex: ^/icon\.jpg$
+    action: ALLOW
+
+  # mlmym does not serve the Lemmy API; belt-and-suspenders if something hits /api/.
+  - name: lemmy-api
+    path_regex: ^/api/
+    action: ALLOW
+
+  # Everything else (including Mozilla/Chrome-like UAs used by the current
+  # crawl) picks up +10 weight. Unlike the upstream default, this is not
+  # limited to a Mozilla/Opera User-Agent, so a non-browser scraper that
+  # skipped the allow/deny lists is still challenged.
+  - name: generic-request
+    path_regex: ^.*$
+    action: WEIGH
+    weight:
+      adjust: 10
+
+dnsbl: false
+
+# Do not enable passthrough (see header comment). A static override would be
+# safe because GetOGTags returns it without contacting mlmym.
+openGraph:
+  enabled: false
+  considerHost: false
+  ttl: 24h
+
+# Anubis returns HTTP 200 for both challenge and deny pages on purpose
+# (aggressive scrapers keep going if they see 4xx/5xx). Fly health checks
+# must not use a path that can return a challenge.
+status_codes:
+  CHALLENGE: 200
+  DENY: 200
+
+store:
+  backend: memory
+  parameters: {}
+
+# Thresholds follow Anubis v1.28.2's default policy, except moderate-suspicion
+# is difficulty 4 (not 2) so this host matches l.lemdro.id's effective
+# difficulty 4 whether browser-like requests land at weight 10 or 25.
+#
+# To raise later if crawlers still overwhelm mlmym after this is live:
+#   1. Change difficulty under moderate-suspicion and mild-proof-of-work
+#      from 4 to 5 (16× the work). Recreate the image and canary-deploy.
+#      Typical felt time at 5: a few seconds on a desktop, often 5–15 s on
+#      a phone (some phones have been much slower).
+#   2. Do not jump to 6 for everyone. Difficulty 6 is 256× difficulty 4
+#      and is often unusable on phones (tens of seconds to minutes).
+#   3. Changing only the DIFFICULTY env in supervisord.conf is not enough;
+#      these thresholds override it for weighed requests.
+#   4. Keep the Fly concurrency 25/50 limits; they shed load even if a
+#      fleet solves the PoW.
+thresholds:
+  - name: minimal-suspicion
+    expression: weight <= 0
+    action: ALLOW
+  - name: mild-suspicion
+    expression:
+      all:
+        - weight > 0
+        - weight < 10
+    action: CHALLENGE
+    challenge:
+      algorithm: metarefresh
+      difficulty: 1
+  - name: moderate-suspicion
+    expression:
+      all:
+        - weight >= 10
+        - weight < 20
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 4
+  - name: mild-proof-of-work
+    expression:
+      all:
+        - weight >= 20
+        - weight < 30
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 4
+  - name: extreme-suspicion
+    expression: weight >= 30
+    action: CHALLENGE
+    challenge:
+      algorithm: fast
+      difficulty: 6
