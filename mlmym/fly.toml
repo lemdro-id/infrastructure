@@ -14,7 +14,10 @@
 # Sticky routing: nginx pins each visitor to one machine with a mlmym_machine
 #   cookie and fly-replay, because Anubis keeps pending challenges in memory
 #   per machine (see nginx.conf, start-nginx.sh).
-# Rollback image (current live, no Anubis, 256 MB):
+# Live (v16, 2026-11-13 9:04 AM PT): Anubis 1.28.2 + sticky peers fix
+#   registry.fly.io/lemdroid-mlmym:deployment-01M7AXV9P0GSEMK1ZJTFNYYZVF
+#   digest sha256:b1a5b0fcaa059e5700b9f51feb61e04b7f48ff06a097da55805b892f463ef70e
+# Rollback to pre-Anubis (v14, 256 MB, no Anubis):
 #   ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e
 #   Use the pre-change fly.toml (health check /, memory 256mb, min 0, 800/1000).
 #   Do not roll back with this fly.toml: the old image has no /nginx_alive_check
