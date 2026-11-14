@@ -48,7 +48,7 @@ primary_region = "sjc"
     timeout = "5s"
     grace_period = "5s"
     method = "GET"
-    path = "/nodeinfo/2.0.json"
+    path = "/nodeinfo/2.1"
   [checks.frontend]
     port = 80
     type = "http"
