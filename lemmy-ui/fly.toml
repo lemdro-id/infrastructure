@@ -2,29 +2,25 @@
 #
 # 2 machines, sjc, shared-cpu-1x / 512 MB, restart on-failure (max 10).
 #   fly scale count 2 --region sjc
-# Image: dessalines/lemmy-ui:0.19.21 (Debian/node:current-slim; see Dockerfile)
-#   plus Anubis v1.28.2 sitting between nginx and Node.
-# Memory is 512 MB because Node 26 + Debian OOM'd under concurrent SSR at 256 MB
-# (off-path repro 2026-11-12: 20 concurrent /login timed out, then node was OOM-killed).
-# Anubis is documented to be comfortable in ~128 MiB; expected RSS is well under
-# that, so 512 MB should still fit Node + Anubis + nginx. Watch RSS on the canary
-# and bump to 768 MB if it is tight.
-#   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
-# Sticky routing: nginx pins each visitor to one machine with a lui_machine
-#   cookie and fly-replay, because Anubis keeps pending challenges in memory
-#   per machine (see nginx.conf, start-nginx.sh).
-# Rollback image (v80: Anubis, no sticky routing):
-#   registry.fly.io/lemdroid-lemmy-ui:deployment-01M78M7S6BG6WMRKJTYD39TX37
-# Older rollback (0.19.21, 512 MB, no Anubis):
+# Image: dessalines/lemmy-ui:0.19.21 + nginx (see Dockerfile), no Anubis, no
+#   sticky fly-replay routing (2026-11-13). Same build as v76/v78:
 #   registry.fly.io/lemdroid-lemmy-ui:deployment-01M77FBWJRT3Y70YWP9JTH60XS
-# Previous live (0.19.11, rollback):
-#   registry.fly.io/lemdroid-lemmy-ui:deployment-01KBTCM7GDKFQNX6A0YAQ2BG5Z
-#   digest sha256:d905b66694e9b98f43849bfe4db9271e007ce489fa63e11f5ff2e8aaee177597
+# Bots are now stopped at the Cloudflare edge by a WAF custom rule
+# (Managed Challenge) on old.lemdro.id and l.lemdro.id:
+#   CF zone lemdro.id, ruleset cccad4590f3a43928dc978d038331ce9,
+#   rule a5bc50282eca4b08a1229a255214c201 (managed_challenge, all host:port variants).
+# Memory is 512 MB because Node 26 + Debian OOM'd under concurrent SSR at 256 MB
+# (off-path repro 2026-11-12: 20 concurrent /login timed out at 256 MB; 40 were all 200 at 512 MB).
+# Concurrency 20/40 (was 800/1000) so a crawler burst that solves the CF
+# challenge spreads to the second machine / queues at the Fly proxy instead of
+# piling SSR onto one Node process.
+#   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
 # Hostname: l.lemdro.id. IPs: shared public IPv6 + private flycast.
 #
-# Secret (set with `fly secrets set --stage`, never committed):
-#   ED25519_PRIVATE_KEY_HEX   64-char hex, from `openssl rand -hex 32`.
-#   Shared across both machines so a challenge cookie issued on one is valid on the other.
+# Re-enable Anubis + sticky routing (one command, ED25519_PRIVATE_KEY_HEX is still set):
+#   cd anubis-disabled/lemmy-ui && fly deploy -a lemdroid-lemmy-ui \
+#     --image registry.fly.io/lemdroid-lemmy-ui:deployment-01M78Y0A1N5X98EX1DTFMTV4BH
+#   (or rebuild from that directory without --image)
 
 app = "lemdroid-lemmy-ui"
 primary_region = "sjc"
@@ -46,8 +42,8 @@ primary_region = "sjc"
   min_machines_running = 1
   [http_service.concurrency]
     type = "requests"
-    hard_limit = 1000
-    soft_limit = 800
+    hard_limit = 40
+    soft_limit = 20
 
   [[http_service.checks]]
     interval = "10s"
@@ -57,19 +53,14 @@ primary_region = "sjc"
     path = "/nginx_alive_check"
     protocol = "http"
 
-  # Hits Node /login directly (nginx /node_alive_check), bypassing Anubis.
-  # Anubis returns HTTP 200 for a challenge page, so checking /login through
-  # Anubis would pass even when Node is down.
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
     grace_period = "15s"
     restart_limit = 0
     method = "GET"
-    path = "/node_alive_check"
+    path = "/login"
     protocol = "http"
-    [http_service.checks.headers]
-      X-Lemmy-UI-Healthcheck = "1"
 
 [[vm]]
   cpu_kind = "shared"
