@@ -1,3 +1,3 @@
-FROM nginx:alpine
+FROM nginx:1.30-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
 COPY ./nginx.conf.maint /etc/nginx/nginx.conf
 COPY --chown=nginx:nginx ./maintenance.html /etc/nginx/maintenance.html
