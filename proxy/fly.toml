@@ -1,11 +1,12 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Reproduces live state as of 2026-11-04 (snapshot of the Fly Machines API).
+# Reproduces live state as of 2026-11-14 after the nginx 1.30.6 deploy.
 # Live: 4 machines: iad, fra, sjc x2 (one sjc standby), shared-cpu-1x / 256 MB, restart on-failure (max 10).
 #   fly scale count 1 --region iad; fly scale count 1 --region fra; fly scale count 2 --region sjc
-# Deployed image: registry.fly.io/lemdroid-lemmy-proxy:deployment-01KMXBMQ9220TYWETBHREA4X7V
-#   digest sha256:00db18448fe6cb598aa565dab689b11deabda19e8818d9c1922d4936c85faacd
-#   Built 2026-03-29 from the Dockerfile/nginx.conf in this directory.
+# Deployed image: registry.fly.io/lemdroid-lemmy-proxy:deployment-01M7DKACXQK95JPPSCK3ME9E6N
+#   digest sha256:31c139c2728bb5db22e141113ac684fa91778e97ccb40acc67a49548186cc293
+#   Built 2026-11-14 from the Dockerfile/nginx.conf in this directory (nginx 1.30.6).
+#   Rollback image: registry.fly.io/lemdroid-lemmy-proxy:deployment-01KMXBMQ9220TYWETBHREA4X7V
 # Hostname: lemdro.id. IPs: dedicated IPv4 + IPv6.
 
 app = "lemdroid-lemmy-proxy"
