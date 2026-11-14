@@ -1,0 +1,68 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# 2 machines, sjc, shared-cpu-1x / 512 MB, restart on-failure (max 10).
+#   fly scale count 2 --region sjc
+# Image: dessalines/lemmy-ui:0.19.21 + nginx (see Dockerfile), no Anubis, no
+#   sticky fly-replay routing (2026-11-13). Same build as v76/v78:
+#   registry.fly.io/lemdroid-lemmy-ui:deployment-01M77FBWJRT3Y70YWP9JTH60XS
+# Bots are now stopped at the Cloudflare edge by a WAF custom rule
+# (Managed Challenge) on old.lemdro.id and l.lemdro.id:
+#   CF zone lemdro.id, ruleset cccad4590f3a43928dc978d038331ce9,
+#   rule a5bc50282eca4b08a1229a255214c201 (managed_challenge, all host:port variants).
+# Memory is 512 MB because Node 26 + Debian OOM'd under concurrent SSR at 256 MB
+# (off-path repro 2026-11-12: 20 concurrent /login timed out at 256 MB; 40 were all 200 at 512 MB).
+# Concurrency 20/40 (was 800/1000) so a crawler burst that solves the CF
+# challenge spreads to the second machine / queues at the Fly proxy instead of
+# piling SSR onto one Node process.
+#   index digest sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
+# Hostname: l.lemdro.id. IPs: shared public IPv6 + private flycast.
+#
+# Re-enable Anubis + sticky routing (one command, ED25519_PRIVATE_KEY_HEX is still set):
+#   cd anubis-disabled/lemmy-ui && fly deploy -a lemdroid-lemmy-ui \
+#     --image registry.fly.io/lemdroid-lemmy-ui:deployment-01M78Y0A1N5X98EX1DTFMTV4BH
+#   (or rebuild from that directory without --image)
+
+app = "lemdroid-lemmy-ui"
+primary_region = "sjc"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  LEMMY_UI_HOST = "127.0.0.1:1234"
+  LEMMY_UI_HTTPS = "false"
+  LEMMY_UI_LEMMY_EXTERNAL_HOST = "lemdro.id:443"
+  # Lemmy backend on the VPS, reached over the private WireGuard peer in the Fly 6PN network
+  LEMMY_UI_LEMMY_INTERNAL_HOST = "[fdaa:2:735c:a7b:910f:0:a:202]:8080"
+
+[http_service]
+  internal_port = 8080
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 40
+    soft_limit = 20
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "1s"
+    method = "GET"
+    path = "/nginx_alive_check"
+    protocol = "http"
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    restart_limit = 0
+    method = "GET"
+    path = "/login"
+    protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
