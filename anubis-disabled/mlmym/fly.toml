@@ -1,0 +1,79 @@
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+# 2 machines, sjc, shared-cpu-1x / 512 MB, restart on-failure.
+# Hostname: old.lemdro.id (Fly cert). m.lemdro.id is Voyager, not this app.
+# Image: ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e
+#   (the digest live was running on 2026-11-13; same as the previous repo pin)
+#   plus Anubis v1.28.2 sitting between nginx and mlmym, with v82-style sticky
+#   fly-replay so in-progress challenges stay on one machine.
+# Memory 256 → 512 MB and concurrency 800/1000 → 25/50 because both 256 MB
+# machines were OOM-killed on 2026-11-13 (restart_count reached 10) under
+# crawler SSR. min_machines_running 0 → 1 so the hostname does not go cold.
+# Anubis is documented to be comfortable in ~128 MiB; expected RSS is well
+# under that. Watch RSS on the canary and bump to 768 MB if it is tight.
+# Sticky routing: nginx pins each visitor to one machine with a mlmym_machine
+#   cookie and fly-replay, because Anubis keeps pending challenges in memory
+#   per machine (see nginx.conf, start-nginx.sh).
+# Live (v16, 2026-11-13 9:04 AM PT): Anubis 1.28.2 + sticky peers fix
+#   registry.fly.io/lemdroid-mlmym:deployment-01M7AXV9P0GSEMK1ZJTFNYYZVF
+#   digest sha256:b1a5b0fcaa059e5700b9f51feb61e04b7f48ff06a097da55805b892f463ef70e
+# Rollback to pre-Anubis (v14, 256 MB, no Anubis):
+#   ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e
+#   Use the pre-change fly.toml (health check /, memory 256mb, min 0, 800/1000).
+#   Do not roll back with this fly.toml: the old image has no /nginx_alive_check
+#   or /mlmym_alive_check.
+#
+# Secret (set with `fly secrets set --stage`, never committed):
+#   ED25519_PRIVATE_KEY_HEX   64-char hex, from `openssl rand -hex 32`.
+#   Shared across both machines so a challenge cookie issued on one is valid on the other.
+#   Use a new key; do not reuse the lemdroid-lemmy-ui secret.
+
+app = "lemdroid-mlmym"
+primary_region = "sjc"
+
+[deploy]
+  strategy = "canary"
+
+[env]
+  LEMMY_DOMAIN = "lemdro.id"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    # Was 1000/800: one shared vCPU + 256 MB could not survive crawler SSR bursts (OOM 2026-11-13).
+    hard_limit = 50
+    soft_limit = 25
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "1s"
+    method = "GET"
+    path = "/nginx_alive_check"
+    protocol = "http"
+
+  # Hits mlmym static file directly (nginx /mlmym_alive_check), bypassing Anubis.
+  # Anubis returns HTTP 200 for a challenge page, so checking / through Anubis
+  # would pass even when mlmym is down. / itself also timed out under the crawl,
+  # so the check uses a cheap static asset instead of SSR.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    restart_limit = 0
+    method = "GET"
+    path = "/mlmym_alive_check"
+    protocol = "http"
+    [http_service.checks.headers]
+      X-Mlmym-Healthcheck = "1"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
