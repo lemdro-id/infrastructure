@@ -8,7 +8,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 | Directory | Fly app | What it is |
 |---|---|---|
 | `proxy/` | `lemdroid-lemmy-proxy` | nginx entrypoint for `lemdro.id` |
-| `federation-buffer/` | `federation-buffer` | buffers inbound ActivityPub `/inbox` traffic in front of Lemmy |
+| `federation-buffer/` | `federation-buffer` | previously buffered inbound `/inbox`; left running unused as of 2026-11-14 so the proxy can roll back to it |
 | `lemmy-ui/` | `lemdroid-lemmy-ui` | official lemmy-ui (`l.lemdro.id`) |
 | `photon-ui/` | `lemdroid-photon-ui` | Photon (`p.`, `nu.`, `photon.lemdro.id`) |
 | `voyager/` | `lemdroid-voyager` | Voyager (`m.lemdro.id`) |
