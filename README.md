@@ -13,6 +13,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 | `photon-ui/` | `lemdroid-photon-ui` | Photon (`p.`, `nu.`, `photon.lemdro.id`) |
 | `voyager/` | `lemdroid-voyager` | Voyager (`m.lemdro.id`) |
 | `mlmym/` | `lemdroid-mlmym` | old-reddit style UI (`old.lemdro.id`) |
+| `anubis-disabled/` | (`lemdroid-mlmym`, `lemdroid-lemmy-ui`) | Anubis builds of mlmym and lemmy-ui, not deployed; see its README |
 | `alexandrite-ui/` | `lemdroid-alexandrite-ui` | Alexandrite (`a.lemdro.id`) |
 | `pictrs/` | backend VPS (Compose) | pict-rs 0.5 image service (localhost only), metadata in Postgres, media in Backblaze B2 |
 | `legacy/` | suspended | old in-Fly Lemmy backend and Fly Postgres |
