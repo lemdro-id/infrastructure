@@ -24,6 +24,10 @@ services:
       # GIF limits from 0.4 (256x256) dropped: 0.5 rejects animations over the limit instead of
       # transcoding them, so 0.5 defaults apply (1920x1920, 900 frames, 40 MB; proxy caps uploads at 20 MB).
     mem_limit: 2g
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8180/healthz"]
       interval: 30s

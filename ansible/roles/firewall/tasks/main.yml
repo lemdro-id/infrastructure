@@ -1,0 +1,35 @@
+# Host firewall: our own `inet filter` table only. Docker (ip filter DOCKER-*) and Tailscale (ts-*) manage
+# their own tables, so nftables.service must never flush the whole ruleset (drop-in below).
+# Public inbound: SSH 22 (key-only) and Tailscale UDP 41641. Everything on tailscale0 is allowed.
+# No HTTP(S) listener: Cloudflare Tunnel is outbound-only.
+
+- name: nftables.service.d exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/nftables.service.d
+    state: directory
+    mode: "0755"
+
+- name: nftables.service stop only removes our table (keeps Docker/Tailscale rules)
+  ansible.builtin.copy:
+    src: 10-lemdroid-scoped-stop.conf
+    dest: /etc/systemd/system/nftables.service.d/10-lemdroid-scoped-stop.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: daemon-reload
+
+- name: /etc/nftables.conf
+  ansible.builtin.copy:
+    src: nftables.conf
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0755"
+    validate: nft -c -f %s
+  notify: reload nftables
+
+- name: nftables enabled
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started

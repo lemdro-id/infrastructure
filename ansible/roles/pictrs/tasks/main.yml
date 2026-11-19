@@ -1,0 +1,47 @@
+# pict-rs 0.5 (compose file reused from the repo's pictrs/ directory). Repo in Postgres db `pictrs`,
+# media in Backblaze B2 bucket `lemdroid` (nothing on local disk). 127.0.0.1:8180 only.
+
+- name: /root/pictrs
+  ansible.builtin.file:
+    path: /root/pictrs
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: pict-rs compose file (from repo pictrs/)
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/pictrs/docker-compose.yml"
+    dest: /root/pictrs/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: pictrs up
+
+- name: pictrs.env (secrets)
+  ansible.builtin.template:
+    src: pictrs.env.j2
+    dest: /root/pictrs/pictrs.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  notify: pictrs up
+
+- name: Running services (read-only)
+  ansible.builtin.command: docker compose ps --status running --services
+  args:
+    chdir: /root/pictrs
+  register: pictrs_ps
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Start pict-rs
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /root/pictrs
+  when:
+    - lemdroid_start_services | bool
+    - "'pictrs' not in pictrs_ps.stdout_lines"

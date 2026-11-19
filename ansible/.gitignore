@@ -1,0 +1,16 @@
+# Vault password stays out of git (the owner keeps it in Google Drive).
+# Never commit the password.
+vault-pass
+vault-pass*
+.vault_pass*
+*.pass
+
+# Plaintext and alternate vault files stay ignored. The only tracked vault
+# is /vault.yml, which is ansible-vault AES256 ciphertext. vault.example.yml
+# is the placeholder template.
+*vault*.yml
+vault.yml.*
+!/vault.yml
+!/vault.example.yml
+
+*.tar.gz

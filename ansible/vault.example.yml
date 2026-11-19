@@ -1,0 +1,28 @@
+# Plaintext names and placeholders only. The real values are in vault.yml, committed
+# as ansible-vault AES256. Do not commit a filled-in plaintext copy.
+# The vault password is not in git (the owner keeps it in Google Drive).
+# Pass with: -e @vault.yml --vault-password-file <path>   (or --ask-vault-pass)
+# Never commit the password.
+
+# /root/lemmy/config.hjson
+vault_lemmy_db_password: "CHANGEME"        # role lemmy (must match the hash restored from globals.sql)
+vault_pictrs_api_key: "CHANGEME"           # same value in config.hjson pictrs.api_key and pictrs.env
+vault_lemmy_smtp_password: "CHANGEME"      # support@lemdro.id at smtp.purelymail.com
+
+# /root/pictrs/pictrs.env
+vault_pictrs_db_password: "CHANGEME"       # role pictrs (must match globals.sql)
+vault_b2_access_key: "CHANGEME"            # Backblaze B2 application key for bucket `lemdroid`
+vault_b2_secret_key: "CHANGEME"
+
+# /etc/cloudflared/lemdroid-ovh.token (Cloudflare Tunnel `lemdroid-ovh` connector token)
+vault_cloudflared_tunnel_token: "CHANGEME"
+
+# /opt/android-news-bot/.password (Lemmy account AndroidNews@lemdro.id)
+vault_androidnews_password: "CHANGEME"
+
+# Only for a first join of a fresh box: single-use, preauthorized, non-ephemeral, short-lived key.
+# Leave empty afterwards. Disable key expiry for the new device in the admin console.
+vault_tailscale_authkey: ""
+
+# Only if bootstrapping roles WITHOUT a globals.sql restore (postgres_bootstrap_roles=true).
+vault_postgres_barman_password: ""         # must match CT 105 ~barman/.pgpass

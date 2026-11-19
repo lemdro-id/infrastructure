@@ -1,0 +1,22 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "4"
+
+services:
+  lemmy:
+    image: dessalines/lemmy:0.19.21
+    hostname: lemmy
+    restart: always
+    logging: *default-logging
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    network_mode: "host"
+    environment:
+      - RUST_LOG="warn"
+#      - RUST_LOG="warn,lemmy_server=debug,lemmy_api=debug,lemmy_api_common=debug,lemmy_api_crud=debug,lemmy_apub=debug,lemmy_db_schema=debug,lemmy_db_views=debug,lemmy_db_views_actor=debug,lemmy_db_views_moderator=debug,lemmy_routes=debug,lemmy_utils=debug,lemmy_websocket=debug"
+    volumes:
+      - ./config.hjson:/config/config.hjson:Z

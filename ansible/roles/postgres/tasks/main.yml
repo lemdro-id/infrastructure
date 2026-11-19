@@ -1,0 +1,152 @@
+# PostgreSQL 16 from PGDG (trixie-pgdg), native. Databases lemmy + pictrs, en_US.UTF-8 collation.
+# Contents come from the CT 105 nightly dump (globals.sql + lemmy.dump + pictrs.dump), never from here.
+
+- name: postgresql-common (ships the PGDG signing key)
+  ansible.builtin.apt:
+    name: postgresql-common
+    state: present
+
+- name: PGDG apt source
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/pgdg.sources
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://apt.postgresql.org/pub/repos/apt
+      Suites: trixie-pgdg
+      Components: main
+      Architectures: amd64
+      Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+  register: pgdg_repo
+
+- name: Install PostgreSQL {{ postgres_version }}
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgres_version }}"
+      - "postgresql-client-{{ postgres_version }}"
+    state: present
+    update_cache: "{{ pgdg_repo is changed }}"
+
+- name: Read cluster locale (read-only)
+  ansible.builtin.command: >-
+    psql -XAt -c "select datcollate from pg_database where datname='template1'"
+    -c "select count(*) from pg_database where datname in ('lemmy','pictrs')"
+  become_user: postgres
+  register: pg_locale
+  changed_when: false
+  check_mode: false
+
+# Debian's postinst creates 16/main with the system locale (C.UTF-8). The restored databases use
+# en_US.UTF-8, so a FRESH, EMPTY cluster is recreated once. Never runs if lemmy/pictrs exist.
+- name: Recreate empty 16/main with en_US.UTF-8 (fresh install only)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    pg_dropcluster --stop {{ postgres_version }} main
+    pg_createcluster --locale en_US.UTF-8 --lc-messages C.UTF-8 --lc-monetary C.UTF-8 \
+      --lc-numeric C.UTF-8 --lc-time C.UTF-8 --start {{ postgres_version }} main
+  args:
+    executable: /bin/bash
+  when:
+    - pg_locale.stdout_lines[0] != 'en_US.UTF-8'
+    - pg_locale.stdout_lines[1] | int == 0
+
+- name: Tuning (conf.d)
+  ansible.builtin.template:
+    src: 10-lemdroid.conf.j2
+    dest: "/etc/postgresql/{{ postgres_version }}/main/conf.d/10-lemdroid.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: restart postgresql
+
+- name: pg_hba - CT 105 nightly dump (barman over Tailscale)
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ postgres_version }}/main/pg_hba.conf"
+    line: "host all barman {{ nightly_dump_client_ip }}/32 scram-sha-256"
+    insertafter: EOF
+  notify: reload postgresql
+
+- name: postgresql@{{ postgres_version }}-main.service.d exists
+  ansible.builtin.file:
+    path: "/etc/systemd/system/postgresql@{{ postgres_version }}-main.service.d"
+    state: directory
+    mode: "0755"
+
+- name: Start after tailscaled (listen_addresses includes the Tailscale IP)
+  ansible.builtin.copy:
+    src: after-tailscale.conf
+    dest: "/etc/systemd/system/postgresql@{{ postgres_version }}-main.service.d/after-tailscale.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: daemon-reload postgres
+
+- name: PostgreSQL enabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - postgresql.service
+    - "postgresql@{{ postgres_version }}-main.service"
+
+# ---- roles and databases ----
+# Normally created by restoring globals.sql (keeps the password hashes the app configs expect).
+# postgres_bootstrap_roles=true creates them without a dump (e.g. an empty test VM).
+- name: Read roles (read-only)
+  ansible.builtin.command: >-
+    psql -XAt -F '|' -c "select rolname, rolsuper, rolcanlogin, rolreplication from pg_roles where rolname !~ '^pg_'"
+  become_user: postgres
+  register: pg_roles_out
+  changed_when: false
+  check_mode: false
+
+- name: Bootstrap missing roles (no dump available)
+  ansible.builtin.command:
+    cmd: psql -X -v ON_ERROR_STOP=1
+    stdin: >-
+      CREATE ROLE {{ item.name }} LOGIN {{ 'SUPERUSER' if item.superuser else '' }}
+      PASSWORD '{{ lookup('vars', 'vault_' ~ item.name ~ '_db_password',
+                   default=lookup('vars', 'vault_postgres_' ~ item.name ~ '_password', default='')) | replace("'", "''") }}';
+  become_user: postgres
+  no_log: true
+  loop: "{{ postgres_roles }}"
+  when:
+    - postgres_bootstrap_roles | default(false) | bool
+    - (item.name ~ '|') not in pg_roles_out.stdout
+
+- name: Roles match the expected attributes
+  ansible.builtin.assert:
+    that: >-
+      (item.name ~ '|' ~ ('t' if item.superuser else 'f') ~ '|' ~ ('t' if item.login else 'f') ~ '|'
+      ~ ('t' if item.replication else 'f')) in pg_roles_out.stdout_lines
+    fail_msg: "role {{ item.name }} missing or attributes differ; restore globals.sql first (see README)"
+    quiet: true
+  loop: "{{ postgres_roles }}"
+  loop_control: {label: "{{ item.name }}"}
+  when: pg_locale.stdout_lines[1] | int > 0 or (postgres_bootstrap_roles | default(false) | bool)
+
+- name: Read databases (read-only)
+  ansible.builtin.command: >-
+    psql -XAt -F '|' -c "select datname, pg_get_userbyid(datdba), datcollate from pg_database"
+  become_user: postgres
+  register: pg_dbs_out
+  changed_when: false
+  check_mode: false
+
+- name: Create empty databases for pg_restore
+  ansible.builtin.command: >-
+    createdb -O {{ item.owner }} -T template0 -E UTF8 -l en_US.UTF-8 {{ item.name }}
+  become_user: postgres
+  loop: "{{ postgres_databases }}"
+  when: (item.name ~ '|') not in pg_dbs_out.stdout and (item.owner ~ '|') in pg_roles_out.stdout
+
+- name: Databases have the expected owner and collation
+  ansible.builtin.assert:
+    that: (item.name ~ '|' ~ item.owner ~ '|en_US.UTF-8') in pg_dbs_out.stdout_lines
+    quiet: true
+  loop: "{{ postgres_databases }}"
+  loop_control: {label: "{{ item.name }}"}
+  when: (item.name ~ '|') in pg_dbs_out.stdout

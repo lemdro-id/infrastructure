@@ -1,0 +1,72 @@
+# Non-secret settings for lemdroid-ovh. Secrets come from the committed encrypted vault.yml,
+# passed with -e @vault.yml (see vault.example.yml for the names). Nothing here is secret.
+# The vault password is not in git.
+
+lemdroid_hostname: lemdroid-ovh
+
+# Repo root on the controller (box/frontends and pictrs/ live there and are reused as-is).
+lemdroid_repo_root: "{{ playbook_dir }}/.."
+
+# SAFETY: false = install and configure only; never start Lemmy, pict-rs, the frontends, cloudflared,
+# or the AndroidNews cron. Lemmy must not start before the database is restored (and never while another
+# copy runs: double federation). Steady-state runs and the live check pass -e lemdroid_start_services=true.
+lemdroid_start_services: false
+
+# Run `apt full-upgrade` (fresh installs only; never part of a check run).
+lemdroid_full_upgrade: false
+
+# Tailscale address of this box. Postgres listens on it for the CT 105 nightly dump.
+# A rebuilt box gets a NEW address unless the old device is removed and the IP re-assigned in the
+# Tailscale admin console; update this and CT 105's HOST= in /usr/local/bin/lemmy-nightly-dump.sh.
+tailscale_ip: 100.73.194.110
+
+# CT 105 (barman / nightly pg_dump) Tailscale address; it pulls lemmy + pictrs + globals at 05:00 UTC.
+nightly_dump_client_ip: 100.101.238.76
+
+base_packages:
+  - apt-listchanges
+  - unattended-upgrades
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - rsync
+  - htop
+  - sysstat
+  - screen
+  - socat
+  - tcpdump
+  - traceroute
+  - nftables
+  - cron
+  - locales
+  - tzdata-legacy        # Postgres timezone 'US/Eastern' needs the legacy names on Debian 13
+  - python3-apt          # Ansible apt module / check mode
+  - python3-yaml         # AndroidNews bot
+  - python3-dateutil     # AndroidNews bot
+  - python3-requests     # AndroidNews bot
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+  - docker-ce-rootless-extras
+
+postgres_version: 16
+
+# Roles as they exist on the live box (attributes only; passwords and hashes come from the nightly
+# globals.sql restore). The postgres role checks these read-only and fails on drift.
+postgres_roles:
+  - {name: lemmy, superuser: true, login: true, replication: false}   # Lemmy runs migrations; owner of db lemmy
+  - {name: pictrs, superuser: false, login: true, replication: false}   # owner of db pictrs
+  - {name: barman, superuser: true, login: true, replication: false}   # CT 105 nightly pg_dump / pg_dumpall -g
+postgres_databases:
+  - {name: lemmy, owner: lemmy}
+  - {name: pictrs, owner: pictrs}
+
+# Photon static build for bare lemdro.id (served by box nginx from /srv/photon).
+# Build with scripts/build-photon.sh on any machine with Docker; pass the resulting tarball path.
+photon_version: v2.4.3
+photon_build_archive: ""
