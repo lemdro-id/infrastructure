@@ -1,18 +1,13 @@
 # Secrets (names only, never values)
 
-Set with `fly secrets set -a <app> NAME=...`. Nothing in this repo contains secret values.
+Nothing in this repo contains secret values.
 
-| App | Secrets |
+| Where | Secrets |
 |---|---|
-| lemdroid-pictrs (legacy, retired) | `PICTRS__SERVER__API_KEY`, `PICTRS__STORE__ACCESS_KEY`, `PICTRS__STORE__SECRET_KEY` |
-| lemdroid-lemmy-proxy | none |
-| federation-buffer | none |
-| lemdroid-lemmy-ui | none |
-| lemdroid-photon-ui | none |
-| lemdroid-voyager | none |
-| lemdroid-mlmym | none |
-| lemdroid-alexandrite-ui | none |
-| lemdroid-lemmy (legacy, suspended) | `LEMMY_DATABASE_URL`, `LEMMY_SMTP_PASSWORD` |
-| lemdroid-postgres (legacy, suspended) | `FLY_CONSUL_URL`, `OPERATOR_PASSWORD`, `REPL_PASSWORD`, `SSH_CERT`, `SSH_KEY`, `SU_PASSWORD` |
+| Backend server: Lemmy `config.hjson` | database URL, SMTP password, and the rest of Lemmy's config secrets |
+| Backend server: pict-rs `/root/pictrs/pictrs.env` | names in `pictrs/pictrs.env.example` (API key, B2 access/secret key) |
+| Backend server: `/etc/cloudflared/lemdroid-ovh.token` (root 600) | Cloudflare Tunnel token for `lemdroid-ovh` |
+| Backend server: PostgreSQL | role passwords |
+| Cloudflare | account API tokens (held by operators, not on the server) |
 
-Backend VPS secrets (Lemmy `config.hjson`, pict-rs `/root/pictrs/pictrs.env` — names in `pictrs/pictrs.env.example`, database passwords, WireGuard keys) live only on that host.
+Frontends (nginx, lemmy-ui, mlmym, and the Workers) need no secrets.

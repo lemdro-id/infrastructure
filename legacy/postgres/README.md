@@ -1,3 +1,0 @@
-Manual actions:
-
-Disable JIT

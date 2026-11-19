@@ -1,0 +1,35 @@
+# lemdroid-ovh frontends + edge nginx. Separate project from /root/lemmy and /root/pictrs.
+name: frontends
+services:
+  nginx:
+    image: nginx:1.30-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+    network_mode: host
+    restart: always
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /srv/photon:/srv/photon:ro
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+  lemmy-ui:
+    image: dessalines/lemmy-ui:0.19.21@sha256:d78d073a888c780f83e10850867841eca03261c8c459b65465fa337b4071768d
+    network_mode: host
+    restart: always
+    environment:
+      LEMMY_UI_HOST: "127.0.0.1:1234"
+      LEMMY_UI_HTTPS: "false"
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: "lemdro.id:443"
+      LEMMY_UI_LEMMY_INTERNAL_HOST: "127.0.0.1:8080"
+    mem_limit: 1g
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+  mlmym:
+    # Host network (the box's inet filter forward chain is policy drop, so bridged containers have no egress; not changing the firewall).
+    # mlmym forwards its TCP peer (127.0.0.1) as X-Forwarded-For to lemdro.id, so Lemmy rate-limits all old. users as one client.
+    image: ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e
+    network_mode: host
+    restart: always
+    command: ["./mlmym", "--addr", "127.0.0.1:8081"]
+    environment:
+      LEMMY_DOMAIN: "lemdro.id"
+    mem_limit: 512m
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
