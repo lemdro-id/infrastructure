@@ -1,0 +1,29 @@
+# lemdroid-ovh: the single backend server for lemdro.id (OVH SYS-2, Debian 13).
+# Captures the box as it runs since 2026-11-19. Data (Postgres contents, pict-rs media in B2) is NOT managed here:
+# it is restored from backups, see README.md "Restore order" and ../docs/rebuild.md.
+#
+# Check against the live box (changes nothing):
+#   ansible-playbook site.yml -e @/secure/path/vault.yml --vault-password-file /secure/path/vault-pass \
+#     -e lemdroid_start_services=true --check --diff
+- name: Configure lemdroid-ovh
+  hosts: lemdroid
+  become: true
+  pre_tasks:
+    - name: Only Debian 13 (trixie) is supported
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+        quiet: true
+  roles:
+    - base
+    - firewall
+    - tailscale
+    - postgres
+    - docker
+    - photon
+    - pictrs
+    - lemmy
+    - frontends
+    - cloudflared
+    - androidnews

@@ -1,0 +1,10 @@
+# `up -d` recreates only services whose config changed; nginx.conf is bind-mounted, so reload nginx too.
+- name: frontends up
+  ansible.builtin.shell: |
+    set -e
+    docker compose up -d
+    docker compose exec -T nginx nginx -t
+    docker compose exec -T nginx nginx -s reload
+  args:
+    chdir: /root/frontends
+  when: lemdroid_start_services | bool

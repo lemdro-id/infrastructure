@@ -1,0 +1,57 @@
+# Lemmy 0.19.21 (host network, 127.0.0.1:8080). Config secrets come from the vault.
+# NEVER start Lemmy before the lemmy database is restored, and never while another copy of this instance
+# runs anywhere (double federation). Both conditions are enforced below.
+
+- name: /root/lemmy
+  ansible.builtin.file:
+    path: /root/lemmy
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Lemmy compose file
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /root/lemmy/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: lemmy up
+
+- name: Lemmy config.hjson (secrets)
+  ansible.builtin.template:
+    src: config.hjson.j2
+    dest: /root/lemmy/config.hjson
+    owner: root
+    group: root
+    mode: "0644"   # /root is 0700; the container reads it via bind mount
+  no_log: true
+  diff: false
+  notify: lemmy up
+
+- name: Is the lemmy database restored? (read-only)
+  ansible.builtin.command: psql -XAt -d lemmy -c "select count(*) from pg_tables where schemaname='public'"
+  become_user: postgres
+  register: lemmy_tables
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Running services (read-only)
+  ansible.builtin.command: docker compose ps --status running --services
+  args:
+    chdir: /root/lemmy
+  register: lemmy_ps
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Start Lemmy (only with a restored database)
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /root/lemmy
+  when:
+    - lemdroid_start_services | bool
+    - lemmy_tables.rc == 0 and (lemmy_tables.stdout | int) > 50
+    - "'lemmy' not in lemmy_ps.stdout_lines"

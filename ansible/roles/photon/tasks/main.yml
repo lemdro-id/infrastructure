@@ -1,0 +1,29 @@
+# Photon (frontend for bare lemdro.id) as a static build in /srv/photon, served by box nginx.
+# Built off-box by scripts/build-photon.sh (Photon {{ photon_version }}, ADAPTER=static, lemdro.id PUBLIC_* values).
+# The same build is what the Cloudflare Worker `lemdroid-photon` serves on p./nu./photon.
+
+- name: Is a Photon build present? (read-only)
+  ansible.builtin.stat:
+    path: /srv/photon/index.html
+  register: photon_index
+
+- name: /srv/photon
+  ansible.builtin.file:
+    path: /srv/photon
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Unpack Photon build
+  ansible.builtin.unarchive:
+    src: "{{ photon_build_archive }}"
+    dest: /srv/photon
+    owner: root
+    group: root
+  when: not photon_index.stat.exists and photon_build_archive | length > 0
+
+- name: Photon build required on a fresh box
+  ansible.builtin.fail:
+    msg: "/srv/photon is empty. Run scripts/build-photon.sh and pass -e photon_build_archive=/path/photon-{{ photon_version }}.tar.gz"
+  when: not photon_index.stat.exists and photon_build_archive | length == 0 and not ansible_check_mode

@@ -1,0 +1,6 @@
+# Android news bot for lemdro.id - posts RSS headlines to !android
+# Managed by ansible (roles/androidnews). Never run a second copy anywhere: double posts.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/30 * * * * androidnews /opt/android-news-bot/run.sh

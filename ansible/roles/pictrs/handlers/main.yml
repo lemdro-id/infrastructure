@@ -1,0 +1,5 @@
+- name: pictrs up
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /root/pictrs
+  when: lemdroid_start_services | bool

@@ -1,0 +1,74 @@
+# Tailscale from the official trixie repo. The box joins as `lemdroid-ovh` with --accept-dns=false
+# (MagicDNS off on this host). Nothing here touches ACLs, DNS or other devices.
+
+- name: Tailscale apt key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    checksum: sha256:3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Tailscale apt source
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Tailscale packages for debian trixie
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
+  register: ts_repo
+
+- name: Install tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ ts_repo is changed }}"
+
+- name: tailscaled enabled
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read Tailscale state (read-only)
+  ansible.builtin.command: tailscale status --json --peers=false
+  register: ts_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Join tailnet (fresh box only; needs vault_tailscale_authkey)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    f=$(mktemp)
+    trap 'shred -u "$f"' EXIT
+    printf '%s' "$TS_AUTHKEY" > "$f"
+    tailscale up --auth-key="file:$f" --hostname={{ lemdroid_hostname }} --accept-dns=false
+  args:
+    executable: /bin/bash
+  environment:
+    TS_AUTHKEY: "{{ vault_tailscale_authkey }}"
+  no_log: true
+  when:
+    - ts_status.rc != 0 or (ts_status.stdout | from_json).BackendState != 'Running'
+    - (vault_tailscale_authkey | default('')) | length > 0
+
+- name: Tailscale must be logged in and MagicDNS off on this host
+  ansible.builtin.assert:
+    that:
+      - ts_status.rc == 0
+      - (ts_status.stdout | from_json).BackendState == 'Running'
+    fail_msg: >-
+      Tailscale is not up. Mint a single-use auth key, pass vault_tailscale_authkey, re-run,
+      then disable key expiry for the new device and update tailscale_ip if it changed.
+  when: not ansible_check_mode or ts_status.rc == 0
+
+- name: Tailscale address matches tailscale_ip
+  ansible.builtin.assert:
+    that: tailscale_ip in ((ts_status.stdout | from_json).Self.TailscaleIPs | default([]))
+    fail_msg: "tailscale_ip={{ tailscale_ip }} but the node has {{ (ts_status.stdout | from_json).Self.TailscaleIPs | default([]) }}"
+  when: ts_status.rc == 0

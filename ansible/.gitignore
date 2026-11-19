@@ -1,0 +1,5 @@
+# Never commit secrets, not even ansible-vault encrypted (this repo is public).
+vault.yml
+*.vault.yml
+vault-pass*
+*.tar.gz

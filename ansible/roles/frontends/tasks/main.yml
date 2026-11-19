@@ -1,0 +1,39 @@
+# Edge nginx + lemmy-ui + mlmym (compose project /root/frontends). Files reused from the repo's box/frontends/.
+# nginx listens on 127.0.0.1:8088 (reached by cloudflared) and 127.0.0.1:8089 (Photon static, /srv/photon).
+
+- name: /root/frontends
+  ansible.builtin.file:
+    path: /root/frontends
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Frontends compose file and nginx.conf (from repo box/frontends/)
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/box/frontends/{{ item }}"
+    dest: "/root/frontends/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - docker-compose.yml
+    - nginx.conf
+  notify: frontends up
+
+- name: Running services (read-only)
+  ansible.builtin.command: docker compose ps --status running --services
+  args:
+    chdir: /root/frontends
+  register: frontends_ps
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Start frontends
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /root/frontends
+  when:
+    - lemdroid_start_services | bool
+    - (['nginx', 'lemmy-ui', 'mlmym'] | difference(frontends_ps.stdout_lines)) | length > 0

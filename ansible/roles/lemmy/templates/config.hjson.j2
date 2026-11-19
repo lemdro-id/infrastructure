@@ -1,0 +1,27 @@
+{
+  hostname: "lemdro.id"
+  bind: "127.0.0.1"
+  port: 8080
+  tls_enabled: true
+
+  database: {
+    uri: "postgres://lemmy:{{ vault_lemmy_db_password }}@127.0.0.1/lemmy?sslmode=disable"
+    pool_size: 30
+  }
+
+  pictrs: {
+    url: "http://127.0.0.1:8180/"
+    api_key: "{{ vault_pictrs_api_key }}"
+  }
+
+  email: {
+    smtp_server: "smtp.purelymail.com:465"
+    # Login name for smtp server
+    smtp_login: "support@lemdro.id"
+    # Address to send emails from, eg "noreply@your-instance.com"
+    smtp_from_address: "support@lemdro.id"
+    # Whether or not smtp connections should use tls. Can be none, tls, or starttls
+    tls_type: "tls"
+    smtp_password: "{{ vault_lemmy_smtp_password }}"
+  }
+}

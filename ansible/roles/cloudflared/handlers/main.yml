@@ -1,0 +1,10 @@
+- name: restart cloudflared
+  ansible.builtin.systemd_service:
+    name: cloudflared-lemdroid
+    state: restarted
+    daemon_reload: true
+  when: lemdroid_start_services | bool
+
+- name: daemon-reload cloudflared
+  ansible.builtin.systemd_service:
+    daemon_reload: true

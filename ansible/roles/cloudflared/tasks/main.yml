@@ -1,0 +1,67 @@
+# cloudflared for the remotely-managed Cloudflare Tunnel `lemdroid-ovh` (ingress, DNS and Workers live in
+# Cloudflare, not here). Outbound-only; metrics on 127.0.0.1:20241. Unit file reused from box/frontends/.
+# A second running connector would share traffic with this one: on a rebuild, keep the old box's
+# cloudflared stopped (or the old box gone) before starting this one.
+
+- name: Cloudflare apt key
+  ansible.builtin.get_url:
+    url: https://pkg.cloudflare.com/cloudflare-public-v2.gpg
+    dest: /usr/share/keyrings/cloudflare-public-v2.gpg
+    checksum: sha256:1bd95f4082b320d541bee351560fc2765aa9f9cd8efa4c9e32135e63f252721d
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: cloudflared apt source
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/cloudflared.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
+  register: cf_repo
+
+- name: Install cloudflared
+  ansible.builtin.apt:
+    name: cloudflared
+    state: present
+    update_cache: "{{ cf_repo is changed }}"
+
+- name: /etc/cloudflared
+  ansible.builtin.file:
+    path: /etc/cloudflared
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Tunnel token (secret)
+  ansible.builtin.copy:
+    dest: /etc/cloudflared/lemdroid-ovh.token
+    content: "{{ vault_cloudflared_tunnel_token }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  notify: restart cloudflared
+
+- name: cloudflared-lemdroid.service (from repo box/frontends/)
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/box/frontends/cloudflared-lemdroid.service"
+    dest: /etc/systemd/system/cloudflared-lemdroid.service
+    owner: root
+    group: root
+    mode: "0644"
+  # daemon-reload only: a comment/Description change must not bounce the tunnel. Restart by hand
+  # (systemctl restart cloudflared-lemdroid, ~5 s blip) if ExecStart changes.
+  notify: daemon-reload cloudflared
+
+- name: cloudflared-lemdroid enabled and running
+  ansible.builtin.systemd_service:
+    name: cloudflared-lemdroid
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: lemdroid_start_services | bool

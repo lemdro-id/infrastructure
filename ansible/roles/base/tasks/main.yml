@@ -1,0 +1,124 @@
+# OS baseline: what we changed on top of OVH's Debian 13 image. OVH's own bits (partitioning/RAID1, netplan,
+# cloud-init, debian.sources mirror, the `debian` user + key, GRUB serial console) come from the installer;
+# GRUB is pinned here too so a rebuild keeps the serial console (IPMI SOL) working.
+
+- name: Hostname
+  ansible.builtin.hostname:
+    name: "{{ lemdroid_hostname }}"
+
+- name: Timezone UTC (OS; Postgres has its own US/Eastern setting)
+  community.general.timezone:
+    name: Etc/UTC
+
+- name: Base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Full upgrade (fresh install only)
+  ansible.builtin.apt:
+    upgrade: full
+  when: lemdroid_full_upgrade | bool
+
+- name: en_US.UTF-8 locale (Postgres databases use en_US.UTF-8 collation)
+  community.general.locale_gen:
+    name: en_US.UTF-8
+    state: present
+
+# --- SSH ---
+- name: sshd hardening drop-in
+  ansible.builtin.copy:
+    src: 10-lemdroid-hardening.conf
+    dest: /etc/ssh/sshd_config.d/10-lemdroid-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: reload ssh
+
+- name: sshd keepalive (OVH image setting, kept in the main file)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?ClientAliveInterval\b'
+    line: ClientAliveInterval 120
+    validate: /usr/sbin/sshd -t -f %s
+  notify: reload ssh
+
+# --- kernel / network ---
+- name: Allow binding to the Tailscale IP before tailscale0 is up (Postgres listen_addresses)
+  ansible.builtin.copy:
+    src: 99-postgres-nonlocal-bind.conf
+    dest: /etc/sysctl.d/99-postgres-nonlocal-bind.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: apply sysctl
+
+- name: Block SCTP module
+  ansible.builtin.copy:
+    src: nginx2root-sctp.conf
+    dest: /etc/modprobe.d/nginx2root-sctp.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: resolved.conf.d directory
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: LLMNR and mDNS off (no UDP 5355 listener)
+  ansible.builtin.copy:
+    src: 10-lemdroid-no-llmnr.conf
+    dest: /etc/systemd/resolved.conf.d/10-lemdroid-no-llmnr.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart resolved
+
+# --- unattended upgrades ---
+- name: Unattended-upgrades config (Debian + Debian-Security origins only; third-party repos are manual)
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/apt/apt.conf.d/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - 20auto-upgrades
+    - 50unattended-upgrades
+
+- name: apt timers, unattended-upgrades and cron enabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+    - unattended-upgrades.service
+    - cron.service
+
+# --- GRUB as OVH ships it (serial console on ttyS1 for IPMI SOL) ---
+- name: /etc/default/grub (OVH serial console)
+  ansible.builtin.copy:
+    src: grub.default
+    dest: /etc/default/grub
+    owner: root
+    group: root
+    mode: "0644"
+  notify: update-grub
+
+- name: GRUB timeout drop-in
+  ansible.builtin.copy:
+    src: 15_timeout.cfg
+    dest: /etc/default/grub.d/15_timeout.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify: update-grub

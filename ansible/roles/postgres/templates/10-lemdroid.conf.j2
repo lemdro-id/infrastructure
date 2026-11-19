@@ -1,0 +1,32 @@
+# lemdroid-ovh PostgreSQL 16 tuning (32 GB RAM, 2x NVMe RAID1). Mirrors VPS settings, scaled.
+# Standby-sensitive params (must be >= primary): max_connections, max_worker_processes,
+# max_wal_senders, max_prepared_transactions, max_locks_per_transaction.
+listen_addresses = 'localhost,{{ tailscale_ip }}'
+max_connections = 300
+shared_buffers = 8GB
+effective_cache_size = 22GB
+work_mem = 5242kB
+maintenance_work_mem = 2GB
+huge_pages = try
+max_worker_processes = 16
+max_parallel_workers = 8
+max_parallel_workers_per_gather = 4
+max_parallel_maintenance_workers = 4
+wal_level = replica
+max_wal_senders = 10
+max_replication_slots = 10
+max_slot_wal_keep_size = 40GB
+wal_compression = lz4
+wal_buffers = 16MB
+max_wal_size = 4GB
+min_wal_size = 1GB
+checkpoint_completion_target = 0.9
+random_page_cost = 1.1
+effective_io_concurrency = 200
+hot_standby = on
+hot_standby_feedback = off
+log_min_duration_statement = 2000
+log_lock_waits = on
+log_autovacuum_min_duration = 1000
+timezone = 'US/Eastern'
+log_timezone = 'US/Eastern'

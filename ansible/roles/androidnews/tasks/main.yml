@@ -1,0 +1,67 @@
+# AndroidNews bot: posts RSS headlines to !android as AndroidNews@lemdro.id every 30 minutes via cron.
+# state.json (dedupe memory) and poster.log are data: restore state.json from a backup if you have one;
+# without it the bot still dedupes against the last 7 days of !android posts.
+# Only one copy may ever run (double posts): the cron job is installed only with lemdroid_start_services.
+
+- name: androidnews group
+  ansible.builtin.group:
+    name: androidnews
+    gid: 992
+    system: true
+
+- name: androidnews user
+  ansible.builtin.user:
+    name: androidnews
+    uid: 999
+    group: androidnews
+    system: true
+    home: /opt/android-news-bot
+    create_home: true
+    shell: /usr/sbin/nologin
+
+- name: /opt/android-news-bot
+  ansible.builtin.file:
+    path: /opt/android-news-bot
+    state: directory
+    owner: androidnews
+    group: androidnews
+    mode: "0755"
+
+- name: Bot code and config
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/android-news-bot/{{ item }}"
+    owner: androidnews
+    group: androidnews
+    mode: "0644"
+  loop:
+    - poster.py
+    - config.yaml
+    - README.md
+
+- name: Runner (root-owned so the bot user cannot rewrite it)
+  ansible.builtin.copy:
+    src: run.sh
+    dest: /opt/android-news-bot/run.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Bot password (secret)
+  ansible.builtin.copy:
+    dest: /opt/android-news-bot/.password
+    content: "{{ vault_androidnews_password }}\n"
+    owner: androidnews
+    group: androidnews
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Cron job (every 30 min)
+  ansible.builtin.copy:
+    src: android-news-bot.cron
+    dest: /etc/cron.d/android-news-bot
+    owner: root
+    group: root
+    mode: "0644"
+  when: lemdroid_start_services | bool

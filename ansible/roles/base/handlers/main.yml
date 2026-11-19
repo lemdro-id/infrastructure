@@ -1,0 +1,17 @@
+- name: reload ssh
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: reloaded
+
+- name: apply sysctl
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-postgres-nonlocal-bind.conf
+  changed_when: true
+
+- name: restart resolved
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+
+- name: update-grub
+  ansible.builtin.command: update-grub
+  changed_when: true

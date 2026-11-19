@@ -1,0 +1,7 @@
+- name: lemmy up
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: /root/lemmy
+  when:
+    - lemdroid_start_services | bool
+    - lemmy_tables.rc == 0 and (lemmy_tables.stdout | int) > 50

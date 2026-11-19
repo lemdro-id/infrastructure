@@ -1,0 +1,8 @@
+- name: daemon-reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+# Re-applies only `table inet filter` (the file deletes + recreates its own table).
+- name: reload nftables
+  ansible.builtin.command: nft -f /etc/nftables.conf
+  changed_when: true

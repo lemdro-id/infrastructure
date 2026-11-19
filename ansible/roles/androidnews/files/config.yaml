@@ -1,0 +1,174 @@
+# Android news bot for lemdro.id
+# Trial: post only to the local !android community.
+# To add communities later, set `community` on a source (or add a
+# destinations map). Sources stay disabled until enabled: true.
+
+api_base: https://lemdro.id/api/v3
+user_agent: AndroidNewsBot/1.0 (lemdro.id)
+username: AndroidNews
+password_env: ANDROIDNEWS_PASSWORD
+
+# Local community name. Easy to override per source.
+default_community: android
+max_posts_per_day: 5
+# America/Los_Angeles calendar day for the cap.
+day_timezone: America/Los_Angeles
+
+# How far back to consider new items (also used by --dry-run).
+lookback_hours: 48
+
+# How far back to scan !android when deduping already-posted stories.
+dedupe_lookback_hours: 168
+dedupe_max_pages: 6
+
+state_file: state.json
+
+sources:
+  # Official Google Keyword product blogs — post as-is, original headline + link.
+  - id: keyword-android
+    name: Google Keyword (Android)
+    url: https://blog.google/products/android/rss/
+    official: true
+    enabled: true
+    community: android
+
+  - id: keyword-pixel
+    name: Google Keyword (Pixel)
+    url: https://blog.google/products-and-platforms/devices/pixel/rss/
+    official: true
+    enabled: true
+    community: android
+
+  - id: keyword-wear
+    name: Google Keyword (Wear OS)
+    url: https://blog.google/products/wear-os/rss/
+    official: true
+    enabled: true
+    community: android
+
+  # No official RSS. Poll the monthly bulletin URL (2026+ path).
+  - id: asb
+    name: Android Security Bulletin
+    type: asb_poll
+    url_template: https://source.android.com/docs/security/bulletin/{year}/{year}-{month:02d}-01
+    title_template: "Android Security Bulletin—{month_name} {year}"
+    official: true
+    enabled: true
+    community: android
+    months_back: 2
+
+  - id: pixel-bulletin
+    name: Pixel Update Bulletin
+    type: asb_poll
+    url_template: https://source.android.com/docs/security/bulletin/pixel/{year}/{year}-{month:02d}-01
+    title_template: "Pixel Update Bulletin—{month_name} {year}"
+    official: true
+    enabled: true
+    community: android
+    months_back: 2
+
+  # Filtered news sites. Original headline + link, no summaries.
+  - id: 9to5google
+    name: 9to5Google
+    url: https://9to5google.com/feed/
+    official: false
+    enabled: true
+    community: android
+
+  # News-only feed is less listicle-heavy than the main AA feed.
+  - id: androidauthority-news
+    name: Android Authority (News)
+    url: https://www.androidauthority.com/news/feed/
+    official: false
+    enabled: true
+    community: android
+
+  # Too much first-person / listicle noise for the trial. Revisit later.
+  - id: androidpolice
+    name: Android Police
+    url: https://www.androidpolice.com/feed/
+    official: false
+    enabled: false
+    community: android
+
+  - id: androidcentral
+    name: Android Central
+    url: https://www.androidcentral.com/feed
+    official: false
+    enabled: false
+    community: android
+
+  - id: xda
+    name: XDA
+    url: https://www.xda-developers.com/feed/
+    official: false
+    enabled: false
+    community: android
+
+  # Dev-focused; better if we later add an Android-dev community.
+  - id: android-developers
+    name: Android Developers Blog
+    url: https://android-developers.googleblog.com/atom.xml
+    official: true
+    enabled: false
+    community: android
+
+  - id: fdroid
+    name: F-Droid
+    url: https://f-droid.org/feed.xml
+    official: true
+    enabled: false
+    community: android
+
+  - id: lineageos
+    name: LineageOS
+    url: https://lineageos.org/feed.xml
+    official: true
+    enabled: false
+    community: android
+
+  - id: calyxos
+    name: CalyxOS
+    url: https://calyxos.org/feed.xml
+    official: true
+    enabled: false
+    community: android
+
+# Title filters apply only to unofficial (news-site) sources.
+# Official sources are posted with their original titles, after dedupe/caps.
+filters:
+  # Unofficial sources must also match at least one include pattern (title or URL).
+  include_title_or_url:
+    - '\b(android|aosp|apk)\b'
+    - '\b(pixel|pixels)\b'
+    - '\b(wear ?os|pixel watch|galaxy watch)\b'
+    - '\bandroid auto\b'
+    - '\b(play store|google play)\b'
+    - '\b(google messages|google wallet|google phone|google contacts)\b'
+    - '\b(grapheneos|lineageos|f-?droid|calyxos)\b'
+    - '\b(samsung|galaxy|motorola|xiaomi|oneplus|nothing phone|oppo|vivo|realme|honor|asus|xperia|poco)\b'
+    - '\b(foldable|feature drop|pixel drop|magic cue)\b'
+    - '\b(smartphone|phone model|android phone)\b'
+  exclude_title:
+    # Rumors, leaks, unannounced hardware
+    - '\b(leak|leaked|leaks|leaker|rumor|rumour|rumored|rumoured|tipped|allegedly|unconfirmed|reportedly)\b'
+    - '\bcould soon\b'
+    - '\bmight (be|get|see|bring|launch)\b'
+    - '\b(hints at|teases|spotted in|tipped ahead)\b'
+    - '\bno longer a mystery\b'
+    - '\b(unannounced|speculati)\b'
+    # Deal spam
+    - '\b(deal|deals|coupon|discount|black friday|cyber monday|price drop|on sale)\b'
+    # First-person listicles / opinion slop
+    - '\b(i[''’]?m ditching|i[''’]ve been|i ditched|i tried|i tested|i asked|i used|i turned|here[''’]s how i|here[''’]s why i)\b'
+    - '\b\d+\b.{0,40}\b(tricks|ways|things|tips|apps you|features you|settings you)\b'
+    - '\b(should you buy|what to expect|weekly wrap|roundup)\b'
+    - '\bbest .{0,50}(for|under|instead of|in 202[0-9])\b'
+    - '\b(brilliant band-aid|won me (back|over)|drove me)\b'
+    - '\bhow to tell if a .{0,40}deal\b'
+    - '\baccidentally confirms\b'
+    - '\b(apk.?teardown|teardown)\b'
+    - '\bhow to manually\b'
+    - '\b(poll results|in our latest poll)\b'
+    - '\b(is a reminder|bets that you)\b'
+    - '\bcould have\b'
