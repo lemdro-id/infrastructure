@@ -1,4 +1,4 @@
-# lemdroid-ovh frontends + edge nginx (Fly retirement, plans/fly-retirement/PLAN.md). Separate project from /root/lemmy and /root/pictrs.
+# lemdroid-ovh frontends + edge nginx. Separate project from /root/lemmy and /root/pictrs.
 name: frontends
 services:
   nginx:
@@ -24,8 +24,7 @@ services:
 
   mlmym:
     # Host network (the box's inet filter forward chain is policy drop, so bridged containers have no egress; not changing the firewall).
-    # mlmym forwards its TCP peer (127.0.0.1) as X-Forwarded-For to lemdro.id, so Lemmy rate-limits all old. users as one client —
-    # same effect as on Fly, where they all shared the Fly egress IP.
+    # mlmym forwards its TCP peer (127.0.0.1) as X-Forwarded-For to lemdro.id, so Lemmy rate-limits all old. users as one client.
     image: ghcr.io/rystaf/mlmym@sha256:aa6c284e739de6eb2d341aa0a6b59479b4dde61f3c85ac5fb1fc419d4f231b2e
     network_mode: host
     restart: always

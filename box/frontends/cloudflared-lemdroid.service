@@ -1,5 +1,5 @@
 [Unit]
-Description=cloudflared tunnel lemdroid-ovh (Fly retirement; plans/fly-retirement)
+Description=cloudflared tunnel lemdroid-ovh
 After=network-online.target docker.service
 Wants=network-online.target
 

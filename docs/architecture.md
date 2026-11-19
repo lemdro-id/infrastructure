@@ -1,6 +1,8 @@
 # lemdro.id architecture (as of 2026-11-19)
 
-Fly.io was retired on 2026-11-19. Everything now runs on one backend server behind Cloudflare.
+Fly.io was retired on 2026-11-19; the old configs are in git history.
+
+Everything now runs on one backend server behind Cloudflare.
 
 ## Overview
 ```
@@ -36,7 +38,7 @@ User / fediverse ──► Cloudflare (zone lemdro.id, Free plan)
   for lemmy.world's IP. SSL Full (strict) applies to the Worker hosts; tunnel hosts need no origin certificate.
 - **Real client IP:** Cloudflare sends `CF-Connecting-IP`; box nginx trusts it from loopback (cloudflared) and passes
   `X-Forwarded-For`/`X-Real-IP` to Lemmy, which rate-limits per client. mlmym talks to `lemdro.id` itself, so all
-  old. users share one rate-limit bucket. This is the same as it was on Fly.
+  old. users share one rate-limit bucket.
 
 ## Backend server (not yet fully managed in this repo)
 - Debian 13, 16 threads, 31 GB RAM. Frontends compose project: `box/frontends/` (nginx, lemmy-ui, mlmym; images pinned by digest).
@@ -44,16 +46,10 @@ User / fediverse ──► Cloudflare (zone lemdro.id, Free plan)
 - **pict-rs 0.5** via Docker Compose (`pictrs/`), `127.0.0.1:8180`; Lemmy proxies `/pictrs` to it. Metadata in the `pictrs` database, media in Backblaze B2.
 - **PostgreSQL 16** (native), local only.
 - Federation: inbound comes through the tunnel at `/inbox`; outbound leaves from the server directly.
-- The Fly WireGuard link (`fly0`) is disabled. Its config is kept on the server only as an archive.
 
 ## Backups
 - PostgreSQL: a nightly logical `pg_dump` of `lemmy` and `pictrs` (9 PM Pacific), pulled to an off-site server (operator-run). That server's own backups are copied offsite weekly.
 - pict-rs media: Backblaze B2.
-
-## Retired: Fly.io (2026-11-19)
-The org `lemdroid` and every app were deleted: proxy, lemmy-ui, photon-ui, voyager, mlmym, alexandrite-ui,
-federation-buffer, the legacy Lemmy and Postgres, and the remote builder. The `fly.toml` directories in this repo are kept
-for history and as a rebuild reference only; nothing deploys them.
 
 ## Not yet captured here (roadmap)
 1. Server configuration as code (OS, Postgres, Lemmy compose, cloudflared, nftables), likely via Ansible.

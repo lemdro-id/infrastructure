@@ -11,6 +11,3 @@ Nothing in this repo contains secret values.
 | Cloudflare | account API tokens (held by operators, not on the server) |
 
 Frontends (nginx, lemmy-ui, mlmym, and the Workers) need no secrets.
-
-Retired with Fly (2026-11-19, apps deleted): `ED25519_PRIVATE_KEY_HEX` (Anubis, lemmy-ui/mlmym, unused),
-`LEMMY_DATABASE_URL`/`LEMMY_SMTP_PASSWORD` (legacy lemdroid-lemmy), Fly Postgres operator secrets, and the backend's Fly WireGuard key.

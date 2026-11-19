@@ -10,5 +10,3 @@ cd /root/pictrs && docker compose pull && docker compose up -d
 ```
 
 Secrets (names only) are in `pictrs.env.example`; values live only in `/root/pictrs/pictrs.env` on the VPS.
-
-The old Fly app `lemdroid-pictrs` (0.4.6, sled repo on a Fly volume) is kept in `legacy/pictrs/` for history.
