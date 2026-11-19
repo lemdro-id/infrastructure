@@ -1,0 +1,14 @@
+[Unit]
+Description=cloudflared tunnel lemdroid-ovh (Fly retirement; plans/fly-retirement)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/cloudflared --no-autoupdate --metrics 127.0.0.1:20241 tunnel run --token-file /etc/cloudflared/lemdroid-ovh.token
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
