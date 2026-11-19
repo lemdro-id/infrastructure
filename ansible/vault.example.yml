@@ -1,6 +1,8 @@
-# Copy to a path OUTSIDE the repo, fill in, then `ansible-vault encrypt` it.
-# Pass with: -e @/secure/path/vault.yml --ask-vault-pass   (or --vault-password-file)
-# Never commit the real file, encrypted or not: this repo is public.
+# Plaintext names and placeholders only. The real values are in vault.yml, committed
+# as ansible-vault AES256. Do not commit a filled-in plaintext copy.
+# The vault password is not in git (the owner keeps it in Google Drive).
+# Pass with: -e @vault.yml --vault-password-file <path>   (or --ask-vault-pass)
+# Never commit the password.
 
 # /root/lemmy/config.hjson
 vault_lemmy_db_password: "CHANGEME"        # role lemmy (must match the hash restored from globals.sql)

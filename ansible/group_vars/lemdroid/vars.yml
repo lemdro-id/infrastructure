@@ -1,5 +1,6 @@
-# Non-secret settings for lemdroid-ovh. Secrets come from a vault file passed with -e @vault.yml
-# (see vault.example.yml for the names). Nothing here is secret.
+# Non-secret settings for lemdroid-ovh. Secrets come from the committed encrypted vault.yml,
+# passed with -e @vault.yml (see vault.example.yml for the names). Nothing here is secret.
+# The vault password is not in git.
 
 lemdroid_hostname: lemdroid-ovh
 

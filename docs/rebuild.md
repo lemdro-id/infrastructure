@@ -30,9 +30,11 @@ works; the playbook details are in [../ansible/README.md](../ansible/README.md).
   the Tailscale name.
 
 ## 3. Playbook, configuration only
+`ansible/vault.yml` is committed ansible-vault AES256. The password is not in git; the owner keeps it in
+Google Drive. `--vault-password-file <path>` works in place of `--ask-vault-pass`. Never commit the password.
 ```sh
 cd ansible
-ansible-playbook site.yml -e @/secure/vault.yml --ask-vault-pass \
+ansible-playbook site.yml -e @vault.yml --ask-vault-pass \
   -e lemdroid_full_upgrade=true -e photon_build_archive=/path/photon-v2.4.3.tar.gz
 ```
 Build the Photon archive first with `ansible/scripts/build-photon.sh` (any machine with Docker).
@@ -51,7 +53,7 @@ and run `sudo -u barman psql -h <ip> -d lemmy -Atc 'select 1'` there.
 
 ## 6. Start services, then the tunnel
 ```sh
-ansible-playbook site.yml -e @/secure/vault.yml --ask-vault-pass -e lemdroid_start_services=true
+ansible-playbook site.yml -e @vault.yml --ask-vault-pass -e lemdroid_start_services=true
 ```
 This starts pict-rs, Lemmy (only with a restored database), the frontends and `cloudflared-lemdroid`, and installs
 the bot cron. Cloudflare needs no change: DNS for `lemdro.id`, `l.` and `old.` already points at the tunnel

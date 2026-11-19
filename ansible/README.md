@@ -39,8 +39,10 @@ AndroidNews `state.json`/`poster.log`. Cloudflare (DNS, tunnel ingress, Workers,
   change is a daemon-reload); nginx reloads gracefully.
 
 ## Secrets
-All secrets are variables; names and placeholders are in [`vault.example.yml`](vault.example.yml). Keep the real
-file **outside this repo** (it is public), encrypted with `ansible-vault`, and pass it with `-e @path`.
+All secrets are variables. Names and placeholders are in [`vault.example.yml`](vault.example.yml). The real values
+are in [`vault.yml`](vault.yml), committed as ansible-vault AES256 ciphertext (`$ANSIBLE_VAULT;1.1;AES256`).
+The vault password is not in git; the owner keeps it in Google Drive. Run with `--vault-password-file <path>`
+or `--ask-vault-pass`. Never commit the password (`vault-pass`, `.vault_pass*`, `*.pass`) or a plaintext vault.
 Secret-bearing tasks use `no_log` and `diff: false`, so check runs never print them.
 
 ## Usage
@@ -50,11 +52,11 @@ python3 -m venv .venv && .venv/bin/pip install 'ansible-core>=2.17'
 .venv/bin/ansible-galaxy collection install -r requirements.yml
 
 # Drift check against the live box (changes nothing):
-.venv/bin/ansible-playbook site.yml -e @/secure/vault.yml --ask-vault-pass \
+.venv/bin/ansible-playbook site.yml -e @vault.yml --vault-password-file <path> \
   -e lemdroid_start_services=true --check --diff
 
-# Fresh box, configuration only (nothing starts):
-.venv/bin/ansible-playbook site.yml -e @/secure/vault.yml --ask-vault-pass \
+# Fresh box, configuration only (nothing starts). --ask-vault-pass works instead of a password file:
+.venv/bin/ansible-playbook site.yml -e @vault.yml --ask-vault-pass \
   -e lemdroid_full_upgrade=true -e photon_build_archive=/path/photon-v2.4.3.tar.gz
 ```
 Check mode needs `python3-apt` on the target (present on the live box; the playbook installs it on a fresh box).
