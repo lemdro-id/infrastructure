@@ -34,8 +34,10 @@ User / fediverse ──► Cloudflare (zone lemdro.id, Free plan)
   `127.0.0.1:20241`). The token lives only on the server in a root-only file. There are no inbound firewall openings.
 - **Workers (static assets only, no script, free):** `lemdroid-voyager` (m.), `lemdroid-alexandrite` (a., alexandrite.),
   `lemdroid-photon` (p., nu., photon.). Each is attached by zone routes `host/*`. SPA fallback, `_headers` for caching.
-- **Security:** a custom WAF rule puts a Managed Challenge on `old.` and `l.`. Config rules: Rocket Loader off for l./a.; relaxed security
-  for lemmy.world's IP. SSL Full (strict) applies to the Worker hosts; tunnel hosts need no origin certificate.
+- **Security:** a custom WAF rule puts a Managed Challenge on `old.` and `l.`; another challenges a known signup-bot
+  fingerprint on `/api/v3/user/register`. Config rules: Rocket Loader off for l./a.; relaxed security for lemmy.world's
+  current address. SSL Full (strict) applies to the Worker hosts; tunnel hosts need no origin certificate.
+  These Cloudflare rules are documented in [PATCHES.md](PATCHES.md) and are not managed from this repo.
 - **Real client IP:** Cloudflare sends `CF-Connecting-IP`; box nginx trusts it from loopback (cloudflared) and passes
   `X-Forwarded-For`/`X-Real-IP` to Lemmy, which rate-limits per client. mlmym talks to `lemdro.id` itself, so all
   old. users share one rate-limit bucket.

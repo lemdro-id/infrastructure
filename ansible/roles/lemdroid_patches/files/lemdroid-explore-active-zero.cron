@@ -1,0 +1,7 @@
+# lemdro.id explore fix (2026-11-20): hourly, zero stale
+# community_aggregates.users_active_* for LOCAL communities with no activity in the window.
+# Only ever writes 0 where Lemmy 0.19.21's own activity query has no row.
+# Managed by ansible (roles/lemdroid_patches). See /usr/local/lib/lemdroid/PATCHES.md
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 * * * * postgres flock -n /tmp/lemdroid-explore-active-zero.lock bash -c 'echo "$(date -Is) start"; psql -d lemmy -X -q -f /usr/local/lib/lemdroid/zero-stale-active.sql 2>&1 | sed "s/^psql:[^ ]* //"' >> /var/log/lemdroid-explore-active-zero.log 2>&1

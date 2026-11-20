@@ -1,8 +1,10 @@
 # Infrastructure
 Repository hosting the configuration which informs the infrastructure which runs https://lemdro.id
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit together today and
-[docs/secrets.md](docs/secrets.md) for which secrets exist (names only).
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit together today,
+[docs/secrets.md](docs/secrets.md) for which secrets exist (names only), and
+[docs/PATCHES.md](docs/PATCHES.md) for local band-aid patches (Lemmy activity counts, Photon Explore sort,
+and Cloudflare rules that are documented here but not managed from this repo).
 
 Since 2026-11-19 everything runs on one backend server behind Cloudflare (Tunnel + Workers static assets).
 

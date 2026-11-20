@@ -1,0 +1,8 @@
+/var/log/lemdroid-now-fix.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    create 0640 postgres adm
+}
