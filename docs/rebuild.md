@@ -38,7 +38,10 @@ ansible-playbook site.yml -e @vault.yml --ask-vault-pass \
   -e lemdroid_full_upgrade=true -e photon_build_archive=/path/photon-v2.4.3.tar.gz
 ```
 Build the Photon archive first with `ansible/scripts/build-photon.sh` (any machine with Docker).
-Nothing is started: Postgres runs empty; Lemmy, pict-rs, the frontends, cloudflared and the bot cron stay off.
+That script builds stock Photon (Explore defaults to TopDay). To keep today's TopWeek default, apply
+`ansible/roles/lemdroid_patches/photon/source-patch.sh` in the Photon checkout before the build; see
+[PATCHES.md](PATCHES.md) section 3.
+Nothing is started: Postgres runs empty; Lemmy, pict-rs, the frontends, cloudflared, the bot cron and the local-patch crons stay off.
 Reboot once if `/var/run/reboot-required` exists (new kernel), then re-run the playbook: it should report no changes.
 
 ## 4. Data restore (CT 105 dump + B2)
@@ -56,7 +59,8 @@ and run `sudo -u barman psql -h <ip> -d lemmy -Atc 'select 1'` there.
 ansible-playbook site.yml -e @vault.yml --ask-vault-pass -e lemdroid_start_services=true
 ```
 This starts pict-rs, Lemmy (only with a restored database), the frontends and `cloudflared-lemdroid`, and installs
-the bot cron. Cloudflare needs no change: DNS for `lemdro.id`, `l.` and `old.` already points at the tunnel
+the bot cron and the local-patch crons (now() reapply and stale active-count zeroing; see [PATCHES.md](PATCHES.md)).
+Cloudflare needs no change: DNS for `lemdro.id`, `l.` and `old.` already points at the tunnel
 `lemdroid-ovh`, and the tunnel's ingress lives in Cloudflare. As soon as the new connector registers, traffic flows.
 Only if the tunnel itself was deleted: create a new one, update its ingress and the three CNAMEs, and put the new
 token in the vault.

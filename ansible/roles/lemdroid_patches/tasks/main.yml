@@ -1,0 +1,118 @@
+# Local band-aid patches on lemdroid-ovh (now() fix, stale active-count zeroing, patch checker).
+# Full inventory: docs/PATCHES.md. Cron jobs (and a one-shot now() apply) are installed only with
+# lemdroid_start_services, same guard as androidnews, so a configuration-only run cannot start them.
+# The Photon Explore TopWeek patch lives in photon/ and is not deployed by this role.
+
+- name: /usr/local/lib/lemdroid
+  ansible.builtin.file:
+    path: /usr/local/lib/lemdroid
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: /usr/local/lib/lemdroid/now-fix
+  ansible.builtin.file:
+    path: /usr/local/lib/lemdroid/now-fix
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Now() fix SQL (original and patched bodies)
+  ansible.builtin.copy:
+    src: "now-fix/{{ item }}"
+    dest: "/usr/local/lib/lemdroid/now-fix/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - community_aggregates_activity.orig.sql
+    - community_aggregates_activity.patched.sql
+    - site_aggregates_activity.orig.sql
+    - site_aggregates_activity.patched.sql
+
+- name: Now() reapply hook
+  ansible.builtin.copy:
+    src: reapply-now-fix.sh
+    dest: /usr/local/lib/lemdroid/reapply-now-fix.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stale active-count SQL
+  ansible.builtin.copy:
+    src: zero-stale-active.sql
+    dest: /usr/local/lib/lemdroid/zero-stale-active.sql
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Patch inventory (from repo docs/PATCHES.md)
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/docs/PATCHES.md"
+    dest: /usr/local/lib/lemdroid/PATCHES.md
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Patch checker
+  ansible.builtin.copy:
+    src: lemdroid-patch-check
+    dest: /usr/local/bin/lemdroid-patch-check
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Patch log files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: postgres
+    group: adm
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - /var/log/lemdroid-now-fix.log
+    - /var/log/lemdroid-explore-active-zero.log
+
+- name: Logrotate for patch logs
+  ansible.builtin.copy:
+    src: "{{ item }}.logrotate"
+    dest: "/etc/logrotate.d/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - lemdroid-now-fix
+    - lemdroid-explore-active-zero
+
+- name: Now() reapply cron (every 5 min)
+  ansible.builtin.copy:
+    src: lemdroid-now-fix.cron
+    dest: /etc/cron.d/lemdroid-now-fix
+    owner: root
+    group: root
+    mode: "0644"
+  when: lemdroid_start_services | bool
+
+- name: Stale active-count cron (hourly at :17)
+  ansible.builtin.copy:
+    src: lemdroid-explore-active-zero.cron
+    dest: /etc/cron.d/lemdroid-explore-active-zero
+    owner: root
+    group: root
+    mode: "0644"
+  when: lemdroid_start_services | bool
+
+- name: Apply now() fix if the original function bodies are still in place
+  ansible.builtin.command:
+    argv:
+      - /usr/local/lib/lemdroid/reapply-now-fix.sh
+  become_user: postgres
+  become: true
+  register: lemdroid_patches_now_fix_apply
+  changed_when: "'REAPPLIED' in lemdroid_patches_now_fix_apply.stdout"
+  failed_when: lemdroid_patches_now_fix_apply.rc != 0
+  when: lemdroid_start_services | bool

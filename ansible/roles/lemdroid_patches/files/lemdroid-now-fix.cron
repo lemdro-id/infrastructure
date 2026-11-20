@@ -1,0 +1,6 @@
+# lemdro.id local patch (2026-11-20): re-apply the now() fix to
+# Lemmy's r.*_aggregates_activity if schema r is re-created. Idempotent.
+# Managed by ansible (roles/lemdroid_patches). See /usr/local/lib/lemdroid/PATCHES.md
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * postgres flock -n /tmp/lemdroid-now-fix.lock /usr/local/lib/lemdroid/reapply-now-fix.sh >> /var/log/lemdroid-now-fix.log 2>&1

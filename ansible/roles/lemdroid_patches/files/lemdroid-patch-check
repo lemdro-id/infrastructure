@@ -1,0 +1,65 @@
+#!/bin/bash
+# lemdroid-patch-check: read-only check of lemdro.id local patches (see /usr/local/lib/lemdroid/PATCHES.md).
+# One OK/DRIFT line per patch; exit 1 if anything drifted. Run as root or: sudo lemdroid-patch-check
+set -uo pipefail
+if [[ $EUID -ne 0 ]]; then exec sudo -n "$0" "$@"; fi
+drift=0
+ok()    { printf 'OK     %-26s %s\n' "$1" "$2"; }
+bad()   { printf 'DRIFT  %-26s %s\n' "$1" "$2"; drift=1; }
+age_s() { local t; t=$(date -d "$1" +%s 2>/dev/null) || { echo 999999; return; }; echo $(( $(date +%s) - t )); }
+UA='AndroidNewsBot/2.0 (lemdro.id)'
+C="curl -s --max-time 10 --connect-timeout 5"
+
+# 1. now() fix on Lemmy's activity functions
+st=$(cd /tmp && timeout 30 sudo -u postgres /usr/local/lib/lemdroid/reapply-now-fix.sh status 2>&1 | tr '\n' ' ')
+if [[ $st == *"community_aggregates_activity patched"*"site_aggregates_activity patched"* ]]; then ok now-fix-functions "both use now()::timestamp"
+else bad now-fix-functions "$st(original = Lemmy re-created schema r and hook has not run yet; unknown = upgrade changed body)"; fi
+
+# 2. reapply hook cron + last run
+if [[ -f /etc/cron.d/lemdroid-now-fix ]]; then
+  last=$(tail -n 1 /var/log/lemdroid-now-fix.log 2>/dev/null); a=$(age_s "${last%% *}")
+  if [[ -z $last ]]; then bad now-fix-hook "cron present, log empty"
+  elif (( a > 900 )); then bad now-fix-hook "last run ${a}s ago (>15 min): $last"
+  elif [[ $last == *ALERT* || $last == *FAILED* || $last == *MISSING* ]]; then bad now-fix-hook "last run: $last"
+  else ok now-fix-hook "last run ${a}s ago: ${last#* }"; fi
+else bad now-fix-hook "/etc/cron.d/lemdroid-now-fix missing"; fi
+
+# 3. active-zero cron + last run
+if [[ -f /etc/cron.d/lemdroid-explore-active-zero && -f /usr/local/lib/lemdroid/zero-stale-active.sql ]]; then
+  ls=$(grep ' start$' /var/log/lemdroid-explore-active-zero.log 2>/dev/null | tail -n 1); a=$(age_s "${ls%% *}")
+  res=$(tail -n 1 /var/log/lemdroid-explore-active-zero.log 2>/dev/null)
+  if [[ -z $ls ]]; then bad active-zero-cron "cron present, no run logged"
+  elif (( a > 7200 )); then bad active-zero-cron "last run ${a}s ago (>2h)"
+  elif [[ $res != *"done:"* ]]; then bad active-zero-cron "last run did not finish: $res"
+  else ok active-zero-cron "last run ${a}s ago: ${res#NOTICE:  }"; fi
+else bad active-zero-cron "cron file or SQL missing"; fi
+
+# 4. Photon TopWeek bundle on all four hosts
+for h in lemdro.id p.lemdro.id photon.lemdro.id nu.lemdro.id; do
+  idx=$($C -H 'Accept: text/html' "https://$h/explore/communities")
+  js=$($C -w '\n%{http_code} %{content_type}' "https://$h/_app/immutable/nodes/5.CXr6ZXtw.js")
+  meta=${js##*$'\n'}
+  if [[ $idx != *app.BN6IQGtw.js* ]]; then bad "photon-topweek $h" "index.html does not reference app.BN6IQGtw.js (bundle replaced/rolled back?)"
+  elif [[ $meta != "200 "*javascript* || $js != *'||`TopWeek`'* ]]; then bad "photon-topweek $h" "5.CXr6ZXtw.js: $meta"
+  else ok "photon-topweek $h" "index -> app.BN6IQGtw.js, 5.CXr6ZXtw.js TopWeek"; fi
+done
+
+# 5. Valnet feed proxy
+for f in androidpolice xda; do
+  out=$($C -A "$UA" -w '\n%{http_code}' "https://androidnews-feed-proxy.corvettecole.workers.dev/$f")
+  code=${out##*$'\n'}
+  if [[ $code == 200 && ( $out == *"<rss"* || $out == *"<feed"* ) ]]; then ok "feed-proxy $f" "200 RSS"
+  else bad "feed-proxy $f" "HTTP $code / not RSS"; fi
+done
+
+# 6. AndroidNews v2 cron (and v1 not running)
+cf=/etc/cron.d/android-news-bot
+if grep -qE '^\*/15 \* \* \* \* androidnews /opt/android-news-bot/v2/run\.sh$' $cf 2>/dev/null; then
+  if grep -qE '^[^#].*/opt/android-news-bot/run\.sh' $cf; then bad androidnews-v2-cron "v1 line also active (double posting!)"
+  else ok androidnews-v2-cron "*/15 v2/run.sh, no v1 line"; fi
+else bad androidnews-v2-cron "v2 line missing from $cf"; fi
+others=$(grep -rlE 'android-news-bot/(v2/)?run\.sh' /etc/cron.d /etc/crontab /var/spool/cron/crontabs 2>/dev/null | grep -v "^$cf$" | tr '\n' ' ')
+[[ -n $others ]] && bad androidnews-v2-cron "also scheduled in: $others"
+
+echo "(Cloudflare-only patches: WAF rules, config rules, Worker versions are not checkable from this box; see PATCHES.md)"
+exit $drift

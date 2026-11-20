@@ -1,0 +1,8 @@
+/var/log/lemdroid-explore-active-zero.log {
+    monthly
+    rotate 6
+    compress
+    missingok
+    notifempty
+    create 0640 postgres adm
+}
