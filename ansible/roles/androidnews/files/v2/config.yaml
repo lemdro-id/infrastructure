@@ -162,7 +162,7 @@ sources:
 
   - {id: 9to5google, name: 9to5Google, url: 'https://9to5google.com/feed/', outlet: 9to5, role: post, priority: 2, enabled: true}
   - {id: androidauthority-news, name: Android Authority (News), url: 'https://www.androidauthority.com/news/feed/', outlet: authority-media, role: post, priority: 2, enabled: true}
-  - {id: androidpolice-news, name: Android Police (News), url: 'https://www.androidpolice.com/feed/news/', outlet: valnet, role: post, priority: 2, enabled: true}
+  - {id: androidpolice-news, name: Android Police (News), url: 'https://androidnews-feed-proxy.corvettecole.workers.dev/androidpolice', outlet: valnet, role: post, priority: 2, enabled: true}
   - {id: verge-google, name: The Verge (Google), url: 'https://www.theverge.com/rss/google/index.xml', outlet: vox, role: post, priority: 2, enabled: true}
   - {id: verge-android, name: The Verge (Android), url: 'https://www.theverge.com/rss/android/index.xml', outlet: vox, role: post, priority: 2, enabled: true}
   - {id: arstechnica-gadgets, name: Ars Technica (Gadgets), url: 'https://feeds.arstechnica.com/arstechnica/gadgets', outlet: conde-nast, role: post, priority: 2, enabled: true}
@@ -170,7 +170,7 @@ sources:
   # Android Central: lots of commerce/first-person pieces in the feed; count its coverage, don't link it.
   - {id: androidcentral, name: Android Central, url: 'https://www.androidcentral.com/feed', outlet: future, role: corroborate, priority: 1, enabled: true}
   - {id: droidlife, name: Droid Life, url: 'https://www.droid-life.com/feed/', outlet: droidlife, role: corroborate, priority: 1, enabled: true}
-  - {id: xda-news, name: XDA (News), url: 'https://www.xda-developers.com/feed/news/', outlet: valnet, role: corroborate, priority: 1, enabled: true}
+  - {id: xda-news, name: XDA (News), url: 'https://androidnews-feed-proxy.corvettecole.workers.dev/xda', outlet: valnet, role: corroborate, priority: 1, enabled: true}
   - {id: engadget, name: Engadget, url: 'https://www.engadget.com/rss.xml', outlet: yahoo, role: corroborate, priority: 1, enabled: true}
   - {id: phonearena, name: PhoneArena, url: 'https://www.phonearena.com/feed/news', outlet: phonearena, role: corroborate, priority: 1, enabled: true}
   - {id: androidheadlines, name: Android Headlines, url: 'https://www.androidheadlines.com/feed', outlet: androidheadlines, role: corroborate, priority: 1, enabled: true}

@@ -56,6 +56,7 @@ This document is the README for Ansible role `androidnews` in `lemdro-id/infrast
 | `tasks/main.yml` | Creates the user and directories, installs v1 and v2, writes the password from the vault to `/opt/android-news-bot/.password`, and installs cron only when `lemdroid_start_services` is true. |
 | `tools/replay.py` | Simulation and replay against cached or live feeds and the Lemmy API. It never posts. `--embed` adds an optional embedding-model comparison and needs `fastembed`; it is not a dependency of the bot. |
 | `docs/replay.md` | Report: v1 measured from the server log versus v2 simulated, the cluster list, embedding side-by-side and feed health. |
+| `worker/feed-proxy.js` | Cloudflare Worker `androidnews-feed-proxy` on workers.dev. Not deployed by Ansible. |
 
 ## Usage
 
@@ -81,6 +82,10 @@ v2 has been live on lemdroid-ovh since 2026-11-20 13:21 CET (Europe/Berlin), wit
 v2 starts with an empty `state-v2.json` (mode 600). That is safe: it reads AndroidNews's last 48 h of !android posts, so v1's posts count toward the rolling cap and the dedupe.
 
 Watch `v2/poster.log`. A poll takes about 7–10 s; most of that is fetching feeds.
+
+## Valnet feeds (Android Police and XDA)
+
+Android Police and XDA (Valnet) block the OVH server IP `51.81.109.184`, so those two feeds are fetched via the allowlisted Worker `androidnews-feed-proxy` on workers.dev (`worker/feed-proxy.js`). Ansible does not deploy the Worker. It allows two paths (`/androidpolice` and `/xda`), caches for 10 minutes, and returns 404 for everything else. To undo, point the two `url` fields in `files/v2/config.yaml` back at the sites (`https://www.androidpolice.com/feed/news/` and `https://www.xda-developers.com/feed/news/`) and delete the Worker.
 
 ## Roll back to v1
 
