@@ -22,11 +22,11 @@ comment-only ones listed under [Known check-mode differences](#known-check-mode-
 | `lemmy` | `/root/lemmy` compose (Lemmy 0.19.21, host net, 127.0.0.1:8080) and templated `config.hjson` |
 | `frontends` | `/root/frontends` with `../box/frontends/{docker-compose.yml,nginx.conf}` (nginx, lemmy-ui, mlmym) |
 | `cloudflared` | Cloudflare apt repo, `cloudflared`, token file, `../box/frontends/cloudflared-lemdroid.service` |
-| `androidnews` | user `androidnews` (uid 999 / gid 992), `/opt/android-news-bot` code + password, cron every 30 min |
+| `androidnews` | user `androidnews` (uid 999 / gid 992), `/opt/android-news-bot` v1 (rollback) + `/opt/android-news-bot/v2` + password, cron every 15 min (v2) |
 
 Not managed (comes from the OVH installer or is data): partitioning/RAID1, netplan, cloud-init, `debian.sources`,
 the `debian` user and its SSH key, exim4 (local-only default), Postgres contents, pict-rs media,
-AndroidNews `state.json`/`poster.log`. Cloudflare (DNS, tunnel ingress, Workers, WAF) is a separate follow-up.
+AndroidNews `state.json`/`state-v2.json`/`poster.log`. Cloudflare (DNS, tunnel ingress, Workers, WAF) is a separate follow-up.
 
 ## Safety switches
 - `lemdroid_start_services` (default **false**): without it the playbook installs and configures but never starts
@@ -75,7 +75,7 @@ Ansible leaves empty `~/.ansible/tmp` directories on the target, even in check m
 5. **Data**: `pg_restore -d pictrs --exit-on-error pictrs.dump` (minutes), then
    `pg_restore -d lemmy -j 8 --exit-on-error lemmy.dump` (hours; rebuilds all indexes). Then `ANALYZE`.
 6. **pict-rs media**: nothing to restore. It is in B2 bucket `lemdroid`; pict-rs reads it with the B2 keys from the vault.
-7. **AndroidNews state** (optional): restore `state.json` if a copy exists (owner `androidnews`, mode 600).
+7. **AndroidNews state** (optional): restore `state-v2.json` (and, for rollback, v1's `state.json`) if a copy exists (owner `androidnews`, mode 600).
 8. **Start**: re-run with `-e lemdroid_start_services=true` (pict-rs, Lemmy, frontends, cloudflared, bot cron).
    Only once the old box is definitely down.
 9. **CT 105**: if the box's Tailscale IP changed, update `HOST=` in `/usr/local/bin/lemmy-nightly-dump.sh` on CT 105
@@ -87,4 +87,4 @@ the box match the repo:
 - `/root/frontends/docker-compose.yml`, `/root/frontends/nginx.conf`, `/etc/systemd/system/cloudflared-lemdroid.service`:
   the repo copies (PR #28) dropped Fly-era comments and the unit's Description suffix.
 - `/root/pictrs/docker-compose.yml`: same comment cleanup from the repo.
-- `/etc/cron.d/android-news-bot`: a stale "DISABLED until cutover" comment replaced (the job line is identical).
+- `/etc/cron.d/android-news-bot`: as of 2026-11-20 13:21 CET the live job is v2 (`*/15` … `/opt/android-news-bot/v2/run.sh`). This role matches that; the 2026-11-19 comment-only difference is obsolete.

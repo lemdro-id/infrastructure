@@ -1,6 +1,9 @@
-# AndroidNews bot: posts RSS headlines to !android as AndroidNews@lemdro.id every 30 minutes via cron.
-# state.json (dedupe memory) and poster.log are data: restore state.json from a backup if you have one;
-# without it the bot still dedupes against the last 7 days of !android posts.
+# AndroidNews bot: posts RSS headlines to !android as AndroidNews@lemdro.id.
+# v2 is live (every 15 minutes via /opt/android-news-bot/v2/run.sh).
+# v1 files stay at /opt/android-news-bot/ for rollback
+# (restore the v1 cron line: */30 * * * * androidnews /opt/android-news-bot/run.sh).
+# state-v2.json (and v1's state.json) and poster.log are data: restore a state file
+# from a backup if you have one; without it v2 still dedupes against recent !android posts.
 # Only one copy may ever run (double posts): the cron job is installed only with lemdroid_start_services.
 
 - name: androidnews group
@@ -27,7 +30,15 @@
     group: androidnews
     mode: "0755"
 
-- name: Bot code and config
+- name: /opt/android-news-bot/v2
+  ansible.builtin.file:
+    path: /opt/android-news-bot/v2
+    state: directory
+    owner: androidnews
+    group: androidnews
+    mode: "0755"
+
+- name: v1 bot code and config (kept for rollback; cron no longer points here)
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/opt/android-news-bot/{{ item }}"
@@ -39,10 +50,30 @@
     - config.yaml
     - README.md
 
-- name: Runner (root-owned so the bot user cannot rewrite it)
+- name: v1 runner (root-owned so the bot user cannot rewrite it)
   ansible.builtin.copy:
     src: run.sh
     dest: /opt/android-news-bot/run.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: v2 bot code and config
+  ansible.builtin.copy:
+    src: "v2/{{ item }}"
+    dest: "/opt/android-news-bot/v2/{{ item }}"
+    owner: androidnews
+    group: androidnews
+    mode: "0644"
+  loop:
+    - poster.py
+    - config.yaml
+    - README.md
+
+- name: v2 runner (root-owned so the bot user cannot rewrite it)
+  ansible.builtin.copy:
+    src: v2/run.sh
+    dest: /opt/android-news-bot/v2/run.sh
     owner: root
     group: root
     mode: "0755"
@@ -57,7 +88,7 @@
   no_log: true
   diff: false
 
-- name: Cron job (every 30 min)
+- name: Cron job (every 15 min, v2)
   ansible.builtin.copy:
     src: android-news-bot.cron
     dest: /etc/cron.d/android-news-bot
