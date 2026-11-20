@@ -1,0 +1,179 @@
+# AndroidNews v2 for lemdro.id: posts original headline + link to !android.
+# Every threshold below is used by poster.py; tune here, not in code.
+
+api_base: https://lemdro.id/api/v3
+user_agent: AndroidNewsBot/2.0 (lemdro.id)
+username: AndroidNews
+password_env: ANDROIDNEWS_PASSWORD
+community: android
+state_file: state-v2.json      # separate from v1's state.json so rollback is clean
+feed_stale_hours: 72           # feed health: flag a feed whose newest item is older than this
+
+schedule:
+  # cron: */15 (or */10). Each run is one "poll".
+  candidate_window_hours: 30   # items older than this are ignored entirely
+  rolling_cap_24h: 8           # posts in any trailing 24h (not reset at midnight)
+  big_overflow: 2              # big stories may push the 24h count to cap + this
+  min_gap_minutes: 90          # between any post and the next ORDINARY post
+  ordinary_min_dwell_minutes: 30  # let other outlets pick a story up before we choose its link/score
+  ordinary_max_age_hours: 12   # skip once the story's NEWEST article is older than this
+  big_max_age_hours: 24
+  quiet_hours_pt: [0, 6]       # America/Los_Angeles; only big stories post in here
+  fill_after_hours: 0          # fill mode OFF (Cole 2026-11-20: quiet days stay quiet); was 4
+  age_decay_per_hour: 0.15     # queue rank = score - decay*age_h (fresher wins near-ties)
+  dedupe_hours: 48             # our posts + !android posts checked for URL/story duplicates
+
+clustering:
+  window_hours: 6              # layers 2-3 only match members published within this window
+  link_window_hours: 36        # layer 1 (shared official/primary link) may match further apart
+  w_entity: 0.45               # weight of entity Jaccard
+  w_tokens: 0.55               # weight of IDF-weighted token cosine
+  threshold: 0.42              # >= joins a cluster
+  dedupe_threshold: 0.5        # stricter when matching older posts (48h, no time window)
+  resid_min: 0.12              # same product/version but residual token cos below this -> different story
+  event_resid_min: 0.08        # ...unless both share an event class (release/announce/security/...)
+  event_bonus: 0.12
+  framing_mismatch_penalty: 0.12  # deal item vs news item about the same product
+  guard_tok_max: 0.5           # the guard only applies when whole-headline token cosine is below this
+  tok_min: 0.18                # headline token cosine floor for any non-link match
+  tok_alone: 0.55             # headline token cosine that matches on its own (no shared product needed)
+  link_tok_min: 0.05           # floor when two items cite the same primary page
+
+primary_min_citations: 2       # outlets citing the same official page before we link that page instead
+primary_link_domains:          # outbound links to these count as "the primary source" (layer 1)
+  - blog.google
+  - android-developers.googleblog.com
+  - developer.android.com
+  - source.android.com
+  - news.samsung.com
+  - support.google.com
+  - android.com
+  - security.googleblog.com
+  - googleblog.com
+  - motorola.com
+  - oneplus.com
+  - nothing.tech
+  - grapheneos.org
+  - f-droid.org
+  - lineageos.org
+
+scoring:
+  per_outlet: 2.0              # per independent (owner-deduped) non-official outlet
+  official_bonus: 2.0          # official post + one keyword = 3.0 -> may post alone
+  official_counts_as_outlet: false
+  big_min_outlets: 3
+  big_score: 6.0
+  fill_min_score: 2.0          # a clean single-outlet story, used only in fill mode
+  post_min_score: 3.0          # below this a story never posts (single outlet needs a keyword or official)
+  rumor_can_be_big: false      # v1 rule was "no rumors"; v2 lets a widely-covered rumor post ordinarily only
+  rumor_single_source_extra: -2.0
+  never_big: [deal, sponsored, listicle, howto]
+  topic_fatigue_hours: 24      # ordinary stories sharing a product/version with a post in this window...
+  topic_fatigue_points: -1.0   # ...lose this much per such post (max 2)
+  hard_exclude: [deal, sponsored]   # never post, however widely covered
+  keyword_bonus:
+    points_each: 1.0
+    max: 2.0
+    patterns:
+      - '\b(launch(es|ed)?|announc(es|ed)|unveil(s|ed)?|debuts?)\b'
+      - '\b(releas(e|es|ed)|stable|roll(s|ing)? out|rollout|now available|available now|goes? global)\b'
+      - '\b(security (patch|update|bulletin)|vulnerab\w*|exploit\w*|zero-day|malware|cve-\d+)\b'
+      - '\b(price|pricing|price hike|costs? \$)\b'
+      - '\b(discontinu\w*|shut(s|ting)? down|kill(s|ing|ed)?|end of support|sunset\w*)\b'
+      - '\b(antitrust|lawsuit|court|ruling|fined?|ban(s|ned)?|sideload\w*|developer verification)\b'
+      - '\b(android \d+(\.\d+)?|one ui \d+(\.\d+)?|pixel drop|feature drop|qpr\d)\b'
+  penalties:
+    deal:
+      points: -6
+      patterns:
+        - '\b(deals?|coupon|discount\w*|black friday|cyber monday|prime day|price drop|on sale|lowest price|price cuts?|perk that stacks)\b'
+        - '(less than half the price|for (just|only) \$\d+|under \$\d+|\$\d+ off|save \$\d+|\bgrab (one|it|this)\b)'
+    sponsored:
+      points: -10
+      patterns: ['\b(sponsored|partner content|advertorial|presented by|in partnership with)\b', '\(ad\)']
+    howto:
+      points: -3
+      patterns: ['\b(how to|here''s how to|step-by-step|tutorial|guide to|explained)\b']
+    opinion:
+      points: -3
+      patterns:
+        - '\b(i[''’]?m ditching|i[''’]ve been|i ditched|i tried|i tested|i asked|i used|i turned|i found|i think|i sort of|i guess|i won''t|i love|i hate|here[''’]s how i|here[''’]s why i|why i)\b'
+        - '\b(i[''’]ve|i[''’]m|i[''’]d|my favorite|my new|my go-to)\b'
+        - '\b(opinion|editorial|hot take|is a reminder|won me (back|over)|drove me|brilliant band-aid|should you buy|what to expect|bets that you)\b'
+    listicle:
+      points: -3
+      patterns:
+        - '\b\d+\b.{0,40}\b(tricks|ways|things|tips|apps you|features you|settings you|reasons|alternatives)\b'
+        - '\bbest .{0,50}(for|under|instead of|in 202[0-9])\b'
+        - '\btop \d+\b'
+    roundup:
+      points: -3
+      patterns: ['\b(roundup|weekly wrap|week in review|this week in|recap|top stories|apps of the week|poll results|in our latest poll|survey shows|readers (like|want|say))\b']
+    rumor:
+      points: -1.5
+      patterns:
+        - '\b(leak|leaked|leaks|leaker|rumou?r(ed|s)?|tipped|allegedly|unconfirmed|reportedly|codenamed?|renders?|prototype|fcc|spotted|hints? at|teases?|apk ?teardown|teardown)\b'
+        - '\b(could soon|may soon|might (be|get|see|bring|launch)|could (bring|give|unlock|launch|tell|have)|is working on|is testing|preparing to|is building)\b'
+    review:
+      points: -1
+      patterns: ['\b(review|hands-on|first impressions|initial review)\b']
+
+# Topic synonyms: phrases rewritten to one token before matching, so outlets
+# that word the same story differently still cluster. Add as you spot misses.
+synonyms:
+  sideload: ['developer verification', 'app verification', 'developer registration', 'sideloading rules', 'sideloading', 'sideload']
+  foldable: ['wide foldable', 'wide-body foldable', 'book-style foldable']
+  ssc: ['social security cards?']
+  ytpremium: ['youtube premium family', 'youtube premium', 'ad-free youtube']
+
+filters:
+  # Non-official items must match one of these (title or URL) to be relevant.
+  include_title_or_url:
+    - '\b(android|aosp|apk)\b'
+    - '\b(pixel|pixels)\b'
+    - '\b(wear ?os|pixel watch|galaxy watch)\b'
+    - '\bandroid (auto|tv|xr)\b'
+    - '\b(play store|google play)\b'
+    - '\b(google messages|google wallet|google phone|google contacts)\b'
+    - '\b(grapheneos|lineageos|f-?droid|calyxos)\b'
+    - '\b(samsung|galaxy|one ui|motorola|razr|xiaomi|oneplus|nothing phone|oppo|vivo|realme|honor|asus|xperia|poco|fairphone)\b'
+    - '\b(foldable|feature drop|pixel drop|magic cue)\b'
+    - '\b(smartphone|phone model|android phone)\b'
+
+# owner groups: outlets with the same owner count as ONE independent outlet.
+#  Valnet: Android Police, XDA (verified: valnetinc.com/en/technology)
+#  Authority Media: Android Authority (independent; not Valnet)
+#  Future plc: Android Central; Vox Media: The Verge; Condé Nast: Ars Technica
+#  Yahoo: Engadget; 9to5 network: 9to5Google; GSMArena, PhoneArena, Droid Life,
+#  Android Headlines: independent.
+# role: post = may be the linked source; corroborate = only counts toward coverage.
+# priority: 2 = preferred link when several outlets have the story.
+sources:
+  - {id: keyword-android, name: Google Keyword (Android), url: 'https://blog.google/products/android/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  - {id: keyword-pixel, name: Google Keyword (Pixel), url: 'https://blog.google/products-and-platforms/devices/pixel/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  - {id: keyword-wear, name: Google Keyword (Wear OS), url: 'https://blog.google/products/wear-os/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true, stale_hours: 2400}
+  - {id: android-developers, name: Android Developers Blog, url: 'https://android-developers.googleblog.com/atom.xml', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  - {id: samsung-newsroom, name: Samsung Global Newsroom, url: 'https://news.samsung.com/global/feed', official: true, outlet: samsung, role: post, priority: 3, enabled: true,
+     require_pattern: '\b(galaxy|one ui|smartphone|mobile|mx business|foldable|wear ?os|android)\b|/mobile|announces-new-leadership'}
+  - {id: asb, name: Android Security Bulletin, type: asb_poll, url_template: 'https://source.android.com/docs/security/bulletin/{year}/{year}-{month:02d}-01',
+     title_template: "Android Security Bulletin—{month_name} {year}", official: true, outlet: google, role: post, priority: 3, enabled: true, months_back: 2}
+  - {id: pixel-bulletin, name: Pixel Update Bulletin, type: asb_poll, url_template: 'https://source.android.com/docs/security/bulletin/pixel/{year}/{year}-{month:02d}-01',
+     title_template: "Pixel Update Bulletin—{month_name} {year}", official: true, outlet: google, role: post, priority: 3, enabled: true, months_back: 2}
+
+  - {id: 9to5google, name: 9to5Google, url: 'https://9to5google.com/feed/', outlet: 9to5, role: post, priority: 2, enabled: true}
+  - {id: androidauthority-news, name: Android Authority (News), url: 'https://www.androidauthority.com/news/feed/', outlet: authority-media, role: post, priority: 2, enabled: true}
+  - {id: androidpolice-news, name: Android Police (News), url: 'https://androidnews-feed-proxy.corvettecole.workers.dev/androidpolice', outlet: valnet, role: post, priority: 2, enabled: true}
+  - {id: verge-google, name: The Verge (Google), url: 'https://www.theverge.com/rss/google/index.xml', outlet: vox, role: post, priority: 2, enabled: true}
+  - {id: verge-android, name: The Verge (Android), url: 'https://www.theverge.com/rss/android/index.xml', outlet: vox, role: post, priority: 2, enabled: true}
+  - {id: arstechnica-gadgets, name: Ars Technica (Gadgets), url: 'https://feeds.arstechnica.com/arstechnica/gadgets', outlet: conde-nast, role: post, priority: 2, enabled: true}
+  - {id: gsmarena, name: GSMArena, url: 'https://www.gsmarena.com/rss-news-reviews.php3', outlet: gsmarena, role: post, priority: 1, enabled: true}
+  # Android Central: lots of commerce/first-person pieces in the feed; count its coverage, don't link it.
+  - {id: androidcentral, name: Android Central, url: 'https://www.androidcentral.com/feed', outlet: future, role: corroborate, priority: 1, enabled: true}
+  - {id: droidlife, name: Droid Life, url: 'https://www.droid-life.com/feed/', outlet: droidlife, role: corroborate, priority: 1, enabled: true}
+  - {id: xda-news, name: XDA (News), url: 'https://androidnews-feed-proxy.corvettecole.workers.dev/xda', outlet: valnet, role: corroborate, priority: 1, enabled: true}
+  - {id: engadget, name: Engadget, url: 'https://www.engadget.com/rss.xml', outlet: yahoo, role: corroborate, priority: 1, enabled: true}
+  - {id: phonearena, name: PhoneArena, url: 'https://www.phonearena.com/feed/news', outlet: phonearena, role: corroborate, priority: 1, enabled: true}
+  - {id: androidheadlines, name: Android Headlines, url: 'https://www.androidheadlines.com/feed', outlet: androidheadlines, role: corroborate, priority: 1, enabled: true}
+  # Checked 2026-11-20 and left off: TechCrunch Google tag (few Android items),
+  # Android Police main feed (same items as /feed/news/), XDA main (PC-heavy).
+  # Reuters/AP have no public RSS any more.
