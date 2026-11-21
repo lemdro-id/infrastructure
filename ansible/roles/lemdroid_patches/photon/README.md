@@ -1,6 +1,6 @@
 # Photon Explore default sort: TopDay → TopWeek (Photon v2.4.3)
 
-These files record the patch. Ansible does **not** deploy them. A Photon upgrade, or a stock run of `ansible/scripts/build-photon.sh`, undoes the change.
+These files record the patch. Ansible does **not** deploy them. `ansible/scripts/build-photon.sh` applies `source-patch.sh`. A rebuild without this hook, or an upstream change that removes TopDay, is what would undo or block it.
 
 Live state as of 20 November 2026, 14:58–15:00 CET (Europe/Berlin):
 
