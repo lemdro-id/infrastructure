@@ -22,6 +22,7 @@ schedule:
   fill_after_hours: 0          # fill mode OFF (Cole 2026-11-20: quiet days stay quiet); was 4
   age_decay_per_hour: 0.15     # queue rank = score - decay*age_h (fresher wins near-ties)
   dedupe_hours: 48             # our posts + !android posts checked for URL/story duplicates
+  v2_live_at: '2026-11-20T12:30:00Z'  # own posts found on !android before this are v1: dedupe only, not the cap
 
 clustering:
   window_hours: 6              # layers 2-3 only match members published within this window
@@ -30,6 +31,7 @@ clustering:
   w_tokens: 0.55               # weight of IDF-weighted token cosine
   threshold: 0.42              # >= joins a cluster
   dedupe_threshold: 0.5        # stricter when matching older posts (48h, no time window)
+  community_title_jaccard: 0.8  # !android check: normalized-headline word Jaccard >= this = already posted
   resid_min: 0.12              # same product/version but residual token cos below this -> different story
   event_resid_min: 0.08        # ...unless both share an event class (release/announce/security/...)
   event_bonus: 0.12
@@ -139,6 +141,17 @@ filters:
     - '\b(samsung|galaxy|one ui|motorola|razr|xiaomi|oneplus|nothing phone|oppo|vivo|realme|honor|asus|xperia|poco|fairphone)\b'
     - '\b(foldable|feature drop|pixel drop|magic cue)\b'
     - '\b(smartphone|phone model|android phone)\b'
+    - '\b(huawei|zte|nubia|redmi|iqoo|tecno|infinix|meizu|hmd|cmf phone|red ?magic|rog phone|aquos)\b'
+    - '\b(google[ -]tv|pixel[ -](tablet|buds)|fitbit)\b'
+  # Google's own consumer apps/services: relevant unless an exclude below also
+  # matches (keeps out Search ads/business, Chrome desktop, Windows/iOS-only).
+  include_unless_excluded:
+    - '\bgoogle[ -](assistant|home|nest|health|fit|photos|messages|play|maps|keep|calendar|lens|wallet|phone|contacts|clock|recorder|files|gemini|one|translate|discover)\b'
+    - '\b(gemini|nest|gboard|youtube music)\b'
+  exclude_title_or_url:
+    - '\b(chrome|chromebooks?|chromeos|windows|macos|macbook|mac|iphones?|ipads?|ios|apple watch)\b'
+    - '\b(search ads?|google ads|adsense|ad ?tech|advertis\w*|google cloud|workspace|vertex|enterprise|gemini api|antitrust|doj)\b'
+    - '\b(homepage|google search|search (button|engine|results))\b'
 
 # owner groups: outlets with the same owner count as ONE independent outlet.
 #  Valnet: Android Police, XDA (verified: valnetinc.com/en/technology)
@@ -150,8 +163,11 @@ filters:
 # priority: 2 = preferred link when several outlets have the story.
 sources:
   - {id: keyword-android, name: Google Keyword (Android), url: 'https://blog.google/products/android/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
-  - {id: keyword-pixel, name: Google Keyword (Pixel), url: 'https://blog.google/products-and-platforms/devices/pixel/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
-  - {id: keyword-wear, name: Google Keyword (Wear OS), url: 'https://blog.google/products/wear-os/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true, stale_hours: 2400}
+  # 2026-11-21: keyword-pixel (devices/pixel) replaced by the parent Devices feed (a superset:
+  # Pixel, Pixel Watch, Fitbit, Nest/Home, Google Health). keyword-wear dropped: ~2 posts/year,
+  # newest Jun 16. Google News query feeds were tested and rejected (news.google.com redirect
+  # links, off-topic noise, and one aggregator would score as an extra outlet).
+  - {id: keyword-devices, name: Google Keyword (Devices), url: 'https://blog.google/products-and-platforms/devices/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true, stale_hours: 336}
   - {id: android-developers, name: Android Developers Blog, url: 'https://android-developers.googleblog.com/atom.xml', official: true, outlet: google, role: post, priority: 3, enabled: true}
   - {id: samsung-newsroom, name: Samsung Global Newsroom, url: 'https://news.samsung.com/global/feed', official: true, outlet: samsung, role: post, priority: 3, enabled: true,
      require_pattern: '\b(galaxy|one ui|smartphone|mobile|mx business|foldable|wear ?os|android)\b|/mobile|announces-new-leadership'}
