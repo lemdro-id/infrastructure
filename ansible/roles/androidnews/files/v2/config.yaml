@@ -126,6 +126,9 @@ scoring:
     review:
       points: -1
       patterns: ['\b(review|hands-on|first impressions|initial review)\b']
+    privacy:
+      points: 3
+      patterns: ['\b(signal(?! (strength|bars?|booster|loss|issues?))|proton ?(mail|vpn|pass|drive)?|tor browser|mullvad|duckduckgo|grapheneos|e2ee|end-to-end encrypt\w*|encrypted messag\w*|spyware|stalkerware|surveillance|privacy)\b']
 
 # Topic synonyms: phrases rewritten to one token before matching, so outlets
 # that word the same story differently still cluster. Add as you spot misses.
@@ -155,6 +158,7 @@ filters:
   include_unless_excluded:
     - '\bgoogle[ -](assistant|home|nest|health|fit|photos|messages|play|maps|keep|calendar|lens|wallet|phone|contacts|clock|recorder|files|gemini|one|translate|discover)\b'
     - '\b(gemini|nest|gboard|youtube music)\b'
+    - '\b(signal|proton ?(mail|vpn|pass|drive)|tor browser|mullvad|grapheneos|e2ee|spyware|stalkerware)\b'
   exclude_title_or_url:
     - '\b(chrome|chromebooks?|chromeos|windows|macos|macbook|mac|iphones?|ipads?|ios|apple watch)\b'
     - '\b(search ads?|google ads|adsense|ad ?tech|advertis\w*|google cloud|workspace|vertex|enterprise|gemini api|antitrust|doj)\b'
