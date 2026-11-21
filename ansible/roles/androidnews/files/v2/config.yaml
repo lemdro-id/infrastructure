@@ -48,7 +48,6 @@ primary_link_domains:          # outbound links to these count as "the primary s
   - developer.android.com
   - source.android.com
   - news.samsung.com
-  - support.google.com
   - android.com
   - security.googleblog.com
   - googleblog.com
