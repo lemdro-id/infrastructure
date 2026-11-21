@@ -69,8 +69,8 @@ scoring:
   rumor_can_be_big: false      # v1 rule was "no rumors"; v2 lets a widely-covered rumor post ordinarily only
   rumor_single_source_extra: -2.0
   never_big: [deal, sponsored, listicle, howto]
-  topic_fatigue_hours: 24      # ordinary stories sharing a product/version with a post in this window...
-  topic_fatigue_points: -1.0   # ...lose this much per such post (max 2)
+  topic_fatigue_hours: 36      # ordinary stories sharing a product/version with a post in this window...
+  topic_fatigue_points: -2.0   # ...lose this much per such post (max 2)
   hard_exclude: [deal, sponsored]   # never post, however widely covered
   keyword_bonus:
     points_each: 1.0
@@ -83,6 +83,7 @@ scoring:
       - '\b(discontinu\w*|shut(s|ting)? down|kill(s|ing|ed)?|end of support|sunset\w*)\b'
       - '\b(antitrust|lawsuit|court|ruling|fined?|ban(s|ned)?|sideload\w*|developer verification)\b'
       - '\b(android \d+(\.\d+)?|one ui \d+(\.\d+)?|pixel drop|feature drop|qpr\d)\b'
+      - '\b(bootloader|grapheneos|lineageos|calyxos|custom roms?|root(ed|ing)|play integrity|app verification|developer verification|sideload(ing)?|unlock(ed|ing)?)\b'
   penalties:
     deal:
       points: -6
@@ -101,6 +102,9 @@ scoring:
         - '\b(i[''’]?m ditching|i[''’]ve been|i ditched|i tried|i tested|i asked|i used|i turned|i found|i think|i sort of|i guess|i won''t|i love|i hate|here[''’]s how i|here[''’]s why i|why i)\b'
         - '\b(i[''’]ve|i[''’]m|i[''’]d|my favorite|my new|my go-to)\b'
         - '\b(opinion|editorial|hot take|is a reminder|won me (back|over)|drove me|brilliant band-aid|should you buy|what to expect|bets that you)\b'
+        - '\bi wish\b'
+        - '\bi had\b'
+        - '\bmy pixel\b'
     listicle:
       points: -3
       patterns:
@@ -111,10 +115,14 @@ scoring:
       points: -3
       patterns: ['\b(roundup|weekly wrap|week in review|this week in|recap|top stories|apps of the week|poll results|in our latest poll|survey shows|readers (like|want|say))\b']
     rumor:
-      points: -1.5
+      points: -2.5
       patterns:
         - '\b(leak|leaked|leaks|leaker|rumou?r(ed|s)?|tipped|allegedly|unconfirmed|reportedly|codenamed?|renders?|prototype|fcc|spotted|hints? at|teases?|apk ?teardown|teardown)\b'
         - '\b(could soon|may soon|might (be|get|see|bring|launch)|could (bring|give|unlock|launch|tell|have)|is working on|is testing|preparing to|is building)\b'
+        - '\b(could start|may finally|is working on)\b'
+    ai_feature:
+      points: -2
+      patterns: ['\b(gemini|ai mode|smart repl(y|ies)|agentic|ai-powered)\b']
     review:
       points: -1
       patterns: ['\b(review|hands-on|first impressions|initial review)\b']
