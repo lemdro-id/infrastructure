@@ -547,6 +547,10 @@ class Classifier:
         self.bonus_res = [re.compile(p, re.I) for p in sc["keyword_bonus"]["patterns"]]
         include = (config.get("filters") or {}).get("include_title_or_url") or []
         self.include = [re.compile(p, re.I) for p in include]
+        # Second tier: relevant unless an exclude pattern also matches.
+        filt = config.get("filters") or {}
+        self.include2 = [re.compile(p, re.I) for p in filt.get("include_unless_excluded") or []]
+        self.exclude2 = [re.compile(p, re.I) for p in filt.get("exclude_title_or_url") or []]
         self.primary_domains = [d.lower() for d in config.get("primary_link_domains") or []]
         self.source_cfg = {s["id"]: s for s in config.get("sources") or []}
 
@@ -569,7 +573,9 @@ class Classifier:
         elif item.official and not src.get("require_include", False):
             item.relevant = True
         else:
-            item.relevant = any(p.search(f"{item.title} {item.url}") for p in self.include)
+            hay2 = f"{item.title} {item.url}"
+            item.relevant = any(p.search(hay2) for p in self.include) or (
+                any(p.search(hay2) for p in self.include2) and not any(p.search(hay2) for p in self.exclude2))
         # Outbound links to primary/official pages (layer-1 matching).
         own = urllib.parse.urlparse(item.norm_url).netloc
         for link in item.links:
@@ -936,6 +942,7 @@ def lemmy_post_records(posts: list[dict]) -> list[dict]:
         title = p.get("name") or ""
         it_strong, it_weak = entities(title)
         recs.append({
+            "id": p.get("id"),
             "title": title,
             "norm_url": normalize_url(p.get("url") or ""),
             "toks": tokens(title),
@@ -992,7 +999,15 @@ def record_from_cluster(cl: Cluster, now: datetime) -> dict:
         "posted_at": now.isoformat(),
         "when": now.isoformat(),
         "by": "AndroidNews(v2)",
+        "source": "v2",
     }
+
+
+def counts_for_cap(p: dict) -> bool:
+    """Only posts made by v2 count toward the rolling cap. v1-era posts stay in
+    state for URL/story dedupe. Untagged records: v2 wrote by='AndroidNews(v2)'."""
+    src = p.get("source") or ("v2" if p.get("by") == "AndroidNews(v2)" else "v1")
+    return src == "v2"
 
 
 # --------------------------------------------------------------------------
@@ -1011,6 +1026,46 @@ def dedupe_hit(cl: Cluster, records: list[dict], sim: Similarity, thr: float, la
             s, why = sim.score(it, r)
             if s >= thr:
                 return f"same story ({label}: '{r['title'][:70]}' by {r['by']}, sim {s:.2f} {why})"
+    return None
+
+
+def url_key(url: str) -> str:
+    """host+path only (www./m. dropped, host lowercased, trailing slash dropped,
+    query and fragment ignored), for the !android already-posted check."""
+    n = urllib.parse.urlparse(normalize_url(url or ""))
+    return f"{n.netloc}{n.path}" if n.netloc else ""
+
+
+def norm_title(title: str) -> set[str]:
+    t = html.unescape(title or "").lower()
+    t = re.sub(r"\s+[-|–—]\s+[^-|–—]{2,40}$", "", t)  # trailing " - Outlet"
+    return set(re.findall(r"[a-z0-9]+", t.replace("’", "").replace("'", "")))
+
+
+def title_jaccard(a: str, b: str) -> float:
+    sa, sb = norm_title(a), norm_title(b)
+    return len(sa & sb) / len(sa | sb) if sa and sb else 0.0
+
+
+def community_hit(cl: Cluster, records: list[dict], sim: Similarity, thr: float, title_thr: float) -> str | None:
+    """Skip if any !android post (by anyone, last 48h) links to one of the
+    cluster's URLs, or its headline matches (normalized-title Jaccard, or the
+    clustering similarity at the stricter dedupe threshold)."""
+    keys = {url_key(u) for u in cl.all_urls} - {""}
+    for r in records:
+        if url_key(r.get("norm_url") or "") in keys:
+            return f"already in !android (post {r.get('id')}): same link, '{r['title'][:70]}' by {r['by']}"
+    titles = [i.title for i in cl.items] + ([cl.post_title] if cl.post_title else [])
+    for r in records:
+        for t in titles:
+            j = title_jaccard(t, r["title"])
+            if j >= title_thr:
+                return f"already in !android (post {r.get('id')}): title match J={j:.2f}, '{r['title'][:70]}' by {r['by']}"
+    for r in records:
+        for it in cl.items:
+            s, why = sim.score(it, r)
+            if s >= thr:
+                return f"already in !android (post {r.get('id')}): same story sim {s:.2f} {why}, '{r['title'][:70]}' by {r['by']}"
     return None
 
 
@@ -1039,7 +1094,7 @@ def decide(
     for cl in clusters:
         score_cluster(cl, cfg, now)
     posted = state.get("posted", [])
-    posted24 = [p for p in posted if parse_dt(p["posted_at"]) > now - timedelta(hours=24)]
+    posted24 = [p for p in posted if counts_for_cap(p) and parse_dt(p["posted_at"]) > now - timedelta(hours=24)]
     last_post = max((parse_dt(p["posted_at"]) for p in posted), default=None)
     cap = int(sched["rolling_cap_24h"])
     hard_cap = cap + int(sched["big_overflow"])
@@ -1049,6 +1104,7 @@ def decide(
     max_age_ord = timedelta(hours=float(sched["ordinary_max_age_hours"]))
     max_age_big = timedelta(hours=float(sched["big_max_age_hours"]))
     min_score = float(cfg["scoring"]["post_min_score"])
+    title_thr = float(clu.get("community_title_jaccard") or 0.8)
 
     # Topic fatigue: an ordinary story about a product we already posted about
     # in the last N hours loses points (keeps One UI beta day from becoming
@@ -1079,8 +1135,8 @@ def decide(
         if not any(i.relevant for i in cl.items):
             cl.skip = "not Android-related"
             continue
-        hit = dedupe_hit(cl, posted, sim, dedupe_thr, "we posted") or \
-            dedupe_hit(cl, lemmy_records, sim, dedupe_thr, "on !android")
+        hit = community_hit(cl, lemmy_records, sim, dedupe_thr, title_thr) or \
+            dedupe_hit(cl, posted, sim, dedupe_thr, "we posted")
         if hit:
             cl.skip = hit
             continue
@@ -1113,6 +1169,10 @@ def decide(
         if not cl.post_url:
             cl.skip = "no postable link (only corroborating sources)"
             continue
+        hit = community_hit(cl, lemmy_records, sim, dedupe_thr, title_thr)
+        if hit:
+            cl.skip = hit
+            continue
         if count >= hard_cap:
             cl.skip = f"BIG but hard cap {hard_cap}/24h reached"
             continue
@@ -1142,6 +1202,10 @@ def decide(
         pick_representative(cl, cfg, resolve_primary, ua)
         if not cl.post_url:
             cl.skip = "no postable link (only corroborating sources)"
+            continue
+        hit = community_hit(cl, lemmy_records, sim, dedupe_thr, title_thr)
+        if hit:
+            cl.skip = hit
             continue
         cl.decision = f"POST (ordinary, rank {rank(cl):.2f})"
         to_post.append(cl)
@@ -1174,7 +1238,8 @@ def print_poll(now: datetime, health: list[dict], clusters: list[Cluster], to_po
     bad = [h for h in health if h["status"] != "ok"]
     print(f"feeds: {len(health)} ({len(health) - len(bad)} ok)" + "".join(f"\n  ! {h['id']}: {h['status']}" for h in bad))
     p24 = [p for p in state.get("posted", []) if parse_dt(p["posted_at"]) > now - timedelta(hours=24)]
-    print(f"rolling 24h posts: {len(p24)}")
+    v2_24 = [p for p in p24 if counts_for_cap(p)]
+    print(f"rolling 24h posts: {len(v2_24)}" + (f" (+{len(p24) - len(v2_24)} v1, not counted toward cap)" if len(p24) > len(v2_24) else ""))
     print(f"clusters: {len(clusters)}  to post: {len(to_post)}")
     for cl in to_post:
         print(describe(cl))
@@ -1239,13 +1304,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Cannot read !{community} for dedupe ({exc}); not posting this poll.", file=sys.stderr)
         return 1
 
-    # Our own account's posts on !android count toward the rolling cap and the
-    # gap even if they are missing from state (v1 cutover, lost state file).
+    # Our own account's posts on !android are added to state even if missing
+    # from it (v1 cutover, lost state file): always for dedupe and the gap, and
+    # for the rolling cap only if made after v2 went live (schedule.v2_live_at).
     me = (cfg.get("username") or "AndroidNews").lower()
     known = {p.get("norm_url") for p in state.get("posted", [])}
+    v2_live = parse_dt(str(cfg["schedule"].get("v2_live_at") or "")) or datetime.min.replace(tzinfo=timezone.utc)
     for r in recs:
         if r["by"].lower() == me and r["norm_url"] not in known:
-            state.setdefault("posted", []).append(dict(r, posted_at=r["when"], cluster_urls=[r["norm_url"]]))
+            src = "v2" if parse_dt(r["when"]) >= v2_live else "v1"
+            state.setdefault("posted", []).append(dict(r, posted_at=r["when"], cluster_urls=[r["norm_url"]], source=src))
     to_post, clusters = decide(items, cfg, state, recs, now, sim, resolve_primary=not args.no_resolve_primary)
     print_poll(now, health, clusters, to_post, state, dry, args.verbose)
     if dry or not to_post:
