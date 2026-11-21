@@ -15,7 +15,7 @@ schedule:
   rolling_cap_24h: 8           # posts in any trailing 24h (not reset at midnight)
   big_overflow: 2              # big stories may push the 24h count to cap + this
   min_gap_minutes: 90          # between any post and the next ORDINARY post
-  ordinary_min_dwell_minutes: 30  # let other outlets pick a story up before we choose its link/score
+  ordinary_min_dwell_minutes: 120  # let other outlets pick a story up before we choose its link/score
   ordinary_max_age_hours: 12   # skip once the story's NEWEST article is older than this
   big_max_age_hours: 24
   quiet_hours_pt: [0, 6]       # America/Los_Angeles; only big stories post in here
