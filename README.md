@@ -5,6 +5,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 [docs/secrets.md](docs/secrets.md) for which secrets exist (names only), and
 [docs/PATCHES.md](docs/PATCHES.md) for local band-aid patches (Lemmy activity counts, Photon Explore sort,
 and Cloudflare rules that are documented here but not managed from this repo).
+[docs/status-page.md](docs/status-page.md) describes the public status page.
 
 Since 2026-11-19 everything runs on one backend server behind Cloudflare (Tunnel + Workers static assets).
 
