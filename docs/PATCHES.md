@@ -60,7 +60,7 @@ Before any Lemmy upgrade, read sections 1 and 2 and remove or refresh those hook
 - **Undo:**
   - Server: `sudo tar -C /srv -xzf /root/backup-explore-fix-20261120/srv-photon-before.tgz photon/index.html photon/service-worker.js`
   - Cloudflare: redeploy Worker `lemdroid-photon` version `f8c14a68-15cb-48f6-9bce-b9cb2143c3dd` at 100%.
-- **Removed by:** any Photon rebuild or upgrade. `ansible/scripts/build-photon.sh` still builds stock Photon (TopDay) unless you apply `photon/source-patch.sh` in the Photon checkout first. That script looks for `TopDay` in `src/routes/explore/+layout.ts` and refuses to run if upstream has changed. Re-apply on the new build, or drop the patch if upstream adds a default-sort setting.
+- **Removed by:** a Photon rebuild that skips this hook, or an upstream change that removes TopDay. `ansible/scripts/build-photon.sh` now runs `photon/source-patch.sh` automatically after the commit pin check. That script looks for `TopDay` in `src/routes/explore/+layout.ts` and the build still fails if TopDay is gone. Drop the patch if upstream adds a default-sort setting.
 
 ## 4. Valnet feed proxy for AndroidNews (Cloudflare Worker and bot config)
 

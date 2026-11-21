@@ -16,6 +16,11 @@ git clone --quiet --depth 1 --branch "$PHOTON_TAG" https://github.com/Xyphyn/pho
 got="$(git -C "$WORK/photon" rev-parse --short=7 HEAD)"
 [ "$got" = "$PHOTON_COMMIT" ] || { echo "tag $PHOTON_TAG is $got, expected $PHOTON_COMMIT" >&2; exit 1; }
 
+# Apply the Explore TopWeek default. source-patch.sh refuses to run if upstream no longer has TopDay.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATCH="$SCRIPT_DIR/../roles/lemdroid_patches/photon/source-patch.sh"
+(cd "$WORK/photon" && "$SOURCE_PATCH")
+
 docker run --rm -v "$WORK/photon:/app" -w /app \
   -e ADAPTER=static \
   -e PUBLIC_INSTANCE_URL=lemdro.id \
