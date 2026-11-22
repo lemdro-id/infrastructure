@@ -1,0 +1,28 @@
+# lemdroid-ovh telegraf: RAID (mdstat) + SMART only -> Influx `infra` on CT 102 over the tailnet.
+# Managed by lemdro-id/infrastructure ansible role `base` (tasks/telegraf.yml). Token comes from
+# /etc/default/telegraf (INFLUX_TOKEN, root:root 0600), never from this file.
+[agent]
+  interval = "60s"
+  round_interval = true
+  flush_interval = "60s"
+  flush_jitter = "5s"
+  metric_buffer_limit = 10000
+  hostname = "lemdroid-ovh"
+  omit_hostname = false
+
+[[outputs.influxdb_v2]]
+  urls = ["http://{{ telegraf_influx_host }}:8086"]
+  token = "${INFLUX_TOKEN}"
+  organization = "home"
+  bucket = "infra"
+  timeout = "10s"
+
+[[inputs.mdstat]]
+  file_name = "/proc/mdstat"
+
+[[inputs.smart]]
+  interval = "300s"
+  path_smartctl = "/usr/sbin/smartctl"
+  use_sudo = true
+  attributes = false
+  timeout = "30s"

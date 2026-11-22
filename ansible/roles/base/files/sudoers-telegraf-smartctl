@@ -1,0 +1,4 @@
+# telegraf inputs.smart runs `sudo -n /usr/sbin/smartctl ...` (read-only queries)
+Cmnd_Alias TELEGRAF_SMARTCTL = /usr/sbin/smartctl
+telegraf ALL=(root) NOPASSWD: TELEGRAF_SMARTCTL
+Defaults!TELEGRAF_SMARTCTL !logfile, !syslog, !pam_session
