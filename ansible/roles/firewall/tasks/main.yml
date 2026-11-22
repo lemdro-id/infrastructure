@@ -1,6 +1,6 @@
 # Host firewall: our own `inet filter` table only. Docker (ip filter DOCKER-*) and Tailscale (ts-*) manage
 # their own tables, so nftables.service must never flush the whole ruleset (drop-in below).
-# Public inbound: SSH 22 (key-only) and Tailscale UDP 41641. Everything on tailscale0 is allowed.
+# Public inbound: only Tailscale UDP 41641 is public. SSH is on tailscale0 only.
 # No HTTP(S) listener: Cloudflare Tunnel is outbound-only.
 
 - name: nftables.service.d exists

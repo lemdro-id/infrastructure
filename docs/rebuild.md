@@ -25,9 +25,10 @@ works; the playbook details are in [../ansible/README.md](../ansible/README.md).
 - Mint a single-use, preauthorized, non-ephemeral auth key (1 h) and put it in the vault as `vault_tailscale_authkey`.
 - To keep `100.73.194.110`, delete the old `lemdroid-ovh` device and assign that IP to the new one in the admin console;
   otherwise set the new `tailscale_ip` in `ansible/group_vars/lemdroid/vars.yml` and update CT 105 (step 5).
-- After joining, disable key expiry for the new device and clear `vault_tailscale_authkey`.
-- For the very first playbook run, connect over the public IP (`ansible_host=<public IPv4>`), then switch back to
-  the Tailscale name.
+- A fresh OVH image has public key-only SSH. Use that only to install and join Tailscale. After joining, disable
+  key expiry for the new device and clear `vault_tailscale_authkey`.
+- Run the playbook over `lemdroid-ovh.alpaca-lizard.ts.net` (the inventory `ansible_host`). Once the firewall role
+  is applied, SSH is Tailscale-only, and OVH IPMI is the emergency way in.
 
 ## 3. Playbook, configuration only
 `ansible/vault.yml` is committed ansible-vault AES256. The password is not in git; the owner keeps it in
