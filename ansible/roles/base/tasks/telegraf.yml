@@ -1,0 +1,80 @@
+# Drive monitoring: telegraf ships RAID (/proc/mdstat) and NVMe SMART (smartctl) only, every 60 s / 5 min,
+# to the home Influx (`grafana-influx`, CT 102, org `home`, bucket `infra`) over the tailnet. Home Assistant
+# alerts on it (array degraded, SMART fail/critical warning/media errors/wear, and metrics stale > 60 min).
+# This box runs --accept-dns=false (no MagicDNS), so the Influx name is pinned in /etc/hosts.
+# The write-only token lives in /etc/default/telegraf (root 0600, read by systemd before telegraf drops to its user).
+
+- name: smartmontools
+  ansible.builtin.apt:
+    name: smartmontools
+    state: present
+
+- name: InfluxData apt key (telegraf)
+  ansible.builtin.get_url:
+    url: https://repos.influxdata.com/influxdata-archive.key
+    dest: /etc/apt/keyrings/influxdata-archive.asc
+    checksum: sha256:40557e261cdbdccac91a2dde474cbf101ef672661e64b211b711cc0b904d5dac
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: InfluxData apt source
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/influxdata.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      deb [signed-by=/etc/apt/keyrings/influxdata-archive.asc] https://repos.influxdata.com/debian stable main
+  register: influx_repo
+
+- name: Install telegraf
+  ansible.builtin.apt:
+    name: telegraf
+    state: present
+    install_recommends: false
+    update_cache: "{{ influx_repo is changed }}"
+
+- name: Influx tailnet name pinned (no MagicDNS on this host)
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ telegraf_influx_host | regex_escape }}$'
+    line: "{{ telegraf_influx_ip }} {{ telegraf_influx_host }}"
+  notify: restart telegraf
+
+- name: telegraf may run smartctl as root (read-only queries)
+  ansible.builtin.copy:
+    src: sudoers-telegraf-smartctl
+    dest: /etc/sudoers.d/telegraf-smartctl
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: telegraf.conf (mdstat + smart -> influxdb_v2)
+  ansible.builtin.template:
+    src: telegraf.conf.j2
+    dest: /etc/telegraf/telegraf.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart telegraf
+
+- name: telegraf Influx token (secret)
+  ansible.builtin.copy:
+    dest: /etc/default/telegraf
+    owner: root
+    group: root
+    mode: "0600"
+    content: "INFLUX_TOKEN={{ vault_influx_telegraf_token }}\n"
+  no_log: true
+  diff: false
+  when: vault_influx_telegraf_token | default('') | length > 0
+  notify: restart telegraf
+
+- name: telegraf enabled and running
+  ansible.builtin.systemd_service:
+    name: telegraf
+    enabled: true
+    state: started
+  when: vault_influx_telegraf_token | default('') | length > 0

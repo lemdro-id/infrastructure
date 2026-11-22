@@ -122,3 +122,7 @@
     group: root
     mode: "0644"
   notify: update-grub
+
+# --- drive monitoring (telegraf: RAID + SMART -> home Influx over the tailnet) ---
+- name: Telegraf drive monitoring
+  ansible.builtin.import_tasks: telegraf.yml

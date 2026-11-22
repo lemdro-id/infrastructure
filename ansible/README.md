@@ -12,7 +12,7 @@ comment-only ones listed under [Known check-mode differences](#known-check-mode-
 ## What it covers
 | Role | On the box |
 |---|---|
-| `base` | hostname, UTC, base packages (incl. `cron`, `tzdata-legacy`), en_US.UTF-8 locale, sshd drop-in + `ClientAliveInterval 120`, `ip_nonlocal_bind` sysctl, SCTP blocked, LLMNR/mDNS off, unattended-upgrades (Debian + security only) and apt timers, GRUB as OVH ships it (serial console `ttyS1`) |
+| `base` | hostname, UTC, base packages (incl. `cron`, `tzdata-legacy`), en_US.UTF-8 locale, sshd drop-in + `ClientAliveInterval 120`, `ip_nonlocal_bind` sysctl, SCTP blocked, LLMNR/mDNS off, unattended-upgrades (Debian + security only) and apt timers, GRUB as OVH ships it (serial console `ttyS1`), drive monitoring (smartmontools + telegraf from the InfluxData repo: `/proc/mdstat` and NVMe SMART to Influx `infra` on CT 102 over the tailnet; Home Assistant alerts on it) |
 | `firewall` | `/etc/nftables.conf` (own `inet filter` table: only Tailscale UDP 41641 is public, SSH is on `tailscale0` only, forward drop) and the `nftables.service` drop-in so stop/restart never flushes Docker's or Tailscale's tables |
 | `tailscale` | official trixie repo, join as `lemdroid-ovh` with `--accept-dns=false` (auth key only on first join) |
 | `postgres` | PGDG `trixie-pgdg`, PostgreSQL 16, en_US.UTF-8 cluster, `conf.d/10-lemdroid.conf`, pg_hba line for CT 105 (`barman`), start after tailscaled; checks roles/databases read-only |

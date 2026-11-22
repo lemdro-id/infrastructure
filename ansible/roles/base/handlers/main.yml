@@ -15,3 +15,9 @@
 - name: update-grub
   ansible.builtin.command: update-grub
   changed_when: true
+
+- name: restart telegraf
+  ansible.builtin.systemd_service:
+    name: telegraf
+    state: restarted
+  when: vault_influx_telegraf_token | default('') | length > 0
