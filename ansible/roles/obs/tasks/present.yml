@@ -122,6 +122,9 @@
 - name: VictoriaLogs access guard (nft, uid obs only)
   ansible.builtin.include_tasks: nft_guard.yml
 
+- name: Postgres collectors and interactions rollup (configs)
+  ansible.builtin.include_tasks: pg.yml
+
 - name: obs units
   ansible.builtin.template:
     src: obs-unit.service.j2
@@ -145,7 +148,7 @@
 - name: systemd daemon-reload
   ansible.builtin.systemd_service:
     daemon_reload: true
-  when: obs_slice is changed or obs_unit_files is changed
+  when: obs_slice is changed or obs_unit_files is changed or obs_interactions_units is changed
 
 - name: obs units enabled and running
   ansible.builtin.systemd_service:
@@ -177,6 +180,13 @@
     - "'obs-victoriametrics' not in obs_restart"
     - "'obs-victoriametrics' not in (obs_started.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.name') | list)"
     - not (ansible_check_mode and obs_unit_files is changed)
+
+- name: Interactions timer enabled (hourly at :07 UTC; the service itself is a oneshot)
+  ansible.builtin.systemd_service:
+    name: obs-interactions.timer
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and obs_interactions_units is changed)
 
 - name: Extra obs pieces (later P1 PRs)
   ansible.builtin.include_tasks: "{{ item }}"

@@ -18,6 +18,8 @@ obs_ports:
   node_fast: 9100
   node_slow: 9101
   process_exporter: 9256
+  postgres_exporter: 9187
+  sql_exporter: 9399
   reserved_pictrs_metrics: 9102     # P2: PICTRS__METRICS__PROMETHEUS_ADDRESS=127.0.0.1:9102
   reserved_lemmy_metrics: 10002     # P2: config.hjson prometheus { bind: 127.0.0.1, port: 10002 }
   reserved_nginx_stub_status: 8090  # frontends: stub_status, 127.0.0.1 only
@@ -65,6 +67,18 @@ obs_binaries:
     sha256: 6d274cca5e94c6a25e55ec05762a472561859ce0a05b984aaedb67dd857ceee2
     path: process-exporter-0.8.7.linux-amd64/process-exporter
     units: [obs-process-exporter]
+  - name: postgres_exporter
+    version: 0.21.1
+    url: https://github.com/prometheus-community/postgres_exporter/releases/download/v0.21.1/postgres_exporter-0.21.1.linux-amd64.tar.gz
+    sha256: 02f316da4e9e409749d6f3b25102d3561cb408023110f3653f6514548926ff0c
+    path: postgres_exporter-0.21.1.linux-amd64/postgres_exporter
+    units: [obs-postgres-exporter]
+  - name: sql_exporter
+    version: 0.24.14
+    url: https://github.com/burningalchemist/sql_exporter/releases/download/0.24.14/sql_exporter-0.24.14.linux-amd64.tar.gz
+    sha256: e6b7b08f48ccd4a30256e163c620810bf06c6d75d1aa21d83417b260ea3fac76
+    path: sql_exporter-0.24.14.linux-amd64/sql_exporter
+    units: [obs-sql-exporter]
 
 # Log files Vector reads; read access is a per-user ACL for obs (never group adm). Teardown removes the ACLs.
 obs_log_acls:
@@ -163,3 +177,43 @@ obs_units:
       - "-web.listen-address={{ obs_bind }}:{{ obs_ports.process_exporter }}"
       - "-config.path={{ obs_etc }}/process-exporter.yml"
       - "-threads=false"
+  # Postgres as role obs (peer auth over the unix socket, no password; role is read-only with statement_timeout 5s,
+  # created by the postgres role's obs-role.sql, tag obs_pg — apply that first). pg_stat_statements stays off (P2).
+  - name: obs-postgres-exporter
+    bin: postgres_exporter
+    memory_max: 64M
+    rw: []
+    env:
+      - '"DATA_SOURCE_NAME=host=/var/run/postgresql user={{ obs_user }} dbname=lemmy sslmode=disable application_name=obs-pgexp"'
+    args:
+      - "--web.listen-address={{ obs_bind }}:{{ obs_ports.postgres_exporter }}"
+      - "--config.file={{ obs_etc }}/postgres_exporter.yml"
+      - "--no-collector.stat_statements"
+      - "--collector.long_running_transactions"
+      - "--collector.database_wraparound"
+      - "--collector.stat_activity_autovacuum"
+      - "--collector.stat_progress_vacuum"
+      - "--collector.statio_user_indexes"
+      - "--collector.postmaster"
+      - "--log.level=warn"
+  - name: obs-sql-exporter
+    bin: sql_exporter
+    memory_max: 64M
+    rw: []
+    args:
+      - "-web.listen-address={{ obs_bind }}:{{ obs_ports.sql_exporter }}"
+      - "-config.file={{ obs_etc }}/sql_exporter.yml"
+      - "-log.level=warn"
+
+# Interactions rollup (headline metric): hourly oneshot (systemd timer, UTC) -> Influx on CT 102, bucket
+# lemdroid_interactions (created in APPLY). Empty token = query-only mode (nothing written anywhere but the job's
+# own health metrics in the textfile dir). Top-N bounds: see obs_api.interactions() in the postgres role.
+obs_interactions_influx_url: "http://{{ telegraf_influx_host | default('grafana-influx.alpaca-lizard.ts.net') }}:8086"
+obs_interactions_influx_org: home
+obs_interactions_influx_bucket: lemdroid_interactions
+obs_interactions_influx_token: "{{ vault_obs_influx_interactions_token | default('') }}"
+obs_interactions_top_home: 25
+obs_interactions_top_site_home: 50
+obs_interactions_top_remote: 200
+obs_timers: [obs-interactions.timer]
+obs_timer_files: [obs-interactions.service, obs-interactions.timer]

@@ -1,0 +1,12 @@
+# {{ ansible_managed }} (role obs)
+[Unit]
+Description=lemdro.id obs: interactions rollup, hourly at :07 UTC
+
+[Timer]
+OnCalendar=*-*-* *:07:00 UTC
+RandomizedDelaySec=60
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

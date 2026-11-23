@@ -1,0 +1,20 @@
+# Top 25 instances by subscriptions in either direction (counts only, via SECURITY DEFINER
+# obs_api.fed_instance_subscriptions(); obs never reads the per-person follower graph). ~0.4 s, so hourly, not 30 s.
+# PromQL: an instance is "major" if major="true" on the per-instance series OR it appears here.
+collector_name: lemdroid_federation_subscriptions
+min_interval: 1h
+
+metrics:
+  - metric_name: lemmy_fed_subscriptions
+    type: gauge
+    help: "Subscriptions between lemdro.id and the instance (top 25 by total). direction=out: our users -> their communities; in: their users -> ours."
+    key_labels: [instance, direction]
+    values: [n]
+    query: |
+      WITH s AS (SELECT * FROM obs_api.fed_instance_subscriptions()),
+      top AS (SELECT instance_id, local_subs_to_them, their_subs_to_us FROM s
+               ORDER BY local_subs_to_them + their_subs_to_us DESC LIMIT 25)
+      SELECT i.domain AS instance, 'out' AS direction, t.local_subs_to_them::float8 AS n
+        FROM top t JOIN instance i ON i.id = t.instance_id
+      UNION ALL
+      SELECT i.domain, 'in', t.their_subs_to_us::float8 FROM top t JOIN instance i ON i.id = t.instance_id

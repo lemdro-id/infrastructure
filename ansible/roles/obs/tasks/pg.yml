@@ -1,0 +1,98 @@
+# Postgres-side collectors (P1): postgres_exporter, sql_exporter (federation), interactions rollup.
+# All connect as role obs over the unix socket (peer auth). The role and its grants come from the postgres role
+# (tag obs_pg); until that is applied these units log auth errors and export pg_up 0 / nothing; nothing else breaks.
+- name: postgres_exporter config (no auth modules; DSN is in the unit)
+  ansible.builtin.copy:
+    dest: "{{ obs_etc }}/postgres_exporter.yml"
+    content: "auth_modules: {}\n"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_pgexp
+
+- name: sql_exporter config directory
+  ansible.builtin.file:
+    path: "{{ obs_etc }}/sql_exporter"
+    state: directory
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0750"
+
+- name: sql_exporter config
+  ansible.builtin.template:
+    src: sql_exporter.yml.j2
+    dest: "{{ obs_etc }}/sql_exporter.yml"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_sqlexp_main
+
+- name: sql_exporter collectors (read-only federation and session queries)
+  ansible.builtin.copy:
+    src: "sql_exporter/{{ item }}"
+    dest: "{{ obs_etc }}/sql_exporter/{{ item }}"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  loop:
+    - lemdroid_federation.collector.yml
+    - lemdroid_federation_subscriptions.collector.yml
+    - lemdroid_pg_sessions.collector.yml
+  register: obs_cfg_sqlexp_coll
+
+- name: libexec directory
+  ansible.builtin.file:
+    path: "{{ obs_root }}/libexec"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Interactions state directory (failed-window list + run lock; obs only)
+  ansible.builtin.file:
+    path: "{{ obs_data }}/interactions"
+    state: directory
+    owner: "{{ obs_user }}"
+    group: "{{ obs_user }}"
+    mode: "0700"
+
+- name: Interactions rollup script
+  ansible.builtin.copy:
+    src: interactions/obs-interactions.py
+    dest: "{{ obs_root }}/libexec/obs-interactions"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Influx write token for the rollup (secret; root-only, passed as a systemd credential)
+  ansible.builtin.copy:
+    dest: "{{ obs_etc }}/influx-interactions.token"
+    content: "{{ obs_interactions_influx_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  when: obs_interactions_influx_token | length > 0
+
+- name: No token configured -> no token file
+  ansible.builtin.file:
+    path: "{{ obs_etc }}/influx-interactions.token"
+    state: absent
+  when: obs_interactions_influx_token | length == 0
+
+- name: Interactions service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [obs-interactions.service, obs-interactions.timer]
+  register: obs_interactions_units
+
+- name: Restart list for the Postgres collectors
+  ansible.builtin.set_fact:
+    obs_restart_extra: >-
+      {{ (['obs-postgres-exporter'] if obs_cfg_pgexp is changed else [])
+         + (['obs-sql-exporter'] if (obs_cfg_sqlexp_main is changed or obs_cfg_sqlexp_coll is changed) else []) }}
