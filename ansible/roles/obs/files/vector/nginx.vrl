@@ -32,16 +32,39 @@ del(.request_uri)
 parts = split(uri, "?", limit: 2)
 path = string(parts[0]) ?? ""
 query = string(parts[1]) ?? ""
-# tokens in the path
-path = replace(path, r'^(/(?:password_change|verify_email|password_reset|activate))/[^/]+', "$1/:token")
-# secret-ish query values
-query = replace(query, r'(?i)(^|&)((?:auth|jwt|token|access_token|refresh_token|password|pass|code|secret|key|api_key|sig|signature)=)[^&]*', "$1${2}REDACTED")
+# tokens in the path (same rules in journal.vrl for URLs inside journald messages)
+path = replace(path, r'(?i)^(/(?:password_change|verify_email|password_reset|activate))/[^/]+', "$1/:token")
+path = replace(path, r'(?i)^/feeds/([a-z_]+)/[^/]+', "/feeds/$1/:arg")
+path = replace(path, r'(?i)^/pictrs/image/delete/[^/]+', "/pictrs/image/delete/:token")
+path = replace(path, r'eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*', ":jwt")
 # image proxy: keep only the host of the proxied URL
 um = parse_regex(query, r'(?:^|&)url=(?P<u>[^&]*)') ?? {}
 if exists(um.u) {
   decoded = decode_percent(string!(um.u))
   .url_host = parse_url(decoded).host ?? "invalid"
-  query = replace(query, r'(^|&)url=[^&]*', "${1}url=REDACTED")
+}
+# query: ALLOWLIST. Only these keys keep their value (truncated to 64 chars); every other value -> REDACTED, so
+# q=, username=, auth=, token=, url=, resource= ... never reach the 30-day store. Odd key names collapse to "_".
+allowed = ["sort", "type_", "page", "page_cursor", "limit", "listing_type", "community_id", "post_id", "comment_id",
+           "parent_id", "person_id", "creator_id", "max_depth", "saved_only", "unread_only", "liked_only",
+           "disliked_only", "show_hidden", "show_read", "show_nsfw", "format", "thumbnail", "blur", "dark", "lang"]
+if query != "" {
+  out = []
+  for_each(split(query, "&")) -> |_i, kv| {
+    kvp = split(kv, "=", limit: 2)
+    k = downcase(string(kvp[0]) ?? "")
+    if !match(k, r'^[a-z0-9_]{1,32}$') { k = "_" }
+    if length(kvp) < 2 {
+      bare = "_"
+      if includes(allowed, k) { bare = k }
+      out = push(out, bare)
+    } else if includes(allowed, k) {
+      out = push(out, k + "=" + truncate(string(kvp[1]) ?? "", 64))
+    } else {
+      out = push(out, k + "=REDACTED")
+    }
+  }
+  query = join!(out, "&")
 }
 .path = truncate(path, 512)
 if query != "" { .args = truncate(query, 512) }

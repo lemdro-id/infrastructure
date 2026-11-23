@@ -21,6 +21,19 @@
   ansible.builtin.include_tasks: "{{ item }}"
   loop: "{{ obs_extra_absent_tasks | default([]) }}"
 
+- name: Stop the VictoriaLogs access guard (deletes table inet obs_guard only)
+  ansible.builtin.systemd_service:
+    name: obs-nft-guard
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove the guard unit and ruleset
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: [/etc/systemd/system/obs-nft-guard.service]
+
 - name: Remove unit files and slice
   ansible.builtin.file:
     path: "/etc/systemd/system/{{ item }}"

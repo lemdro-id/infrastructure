@@ -113,6 +113,15 @@ namespace = "lemdroid_nginx"
 tags.host = "{{ host }}"
 tags.route_class = "{{ route_class }}"
 
+# route values come from client-controlled paths (bounded by nginx.vrl, but /api/v3/<a>/<b>/<c> is still open):
+# hard cap per tag key; beyond it the tag is dropped (series fold together) instead of growing the TSDB.
+[transforms.nginx_metric_limit]
+type = "tag_cardinality_limit"
+inputs = ["nginx_to_metric"]
+mode = "exact"
+value_limit = 250
+limit_exceeded_action = "drop_tag"
+
 # inbound federation per sender instance (HTTP Signature keyId host)
 [transforms.fed_in_events]
 type = "filter"
@@ -207,7 +216,7 @@ buffer.when_full = "drop_newest"
 
 [sinks.vm]
 type = "prometheus_remote_write"
-inputs = ["nginx_to_metric", "fed_in_limit", "pg_to_metric", "dropped_count", "nginx_stub", "vector_self"]
+inputs = ["nginx_metric_limit", "fed_in_limit", "pg_to_metric", "dropped_count", "nginx_stub", "vector_self"]
 endpoint = "http://127.0.0.1:8428/api/v1/write"
 healthcheck.enabled = false
 default_namespace = "vector"

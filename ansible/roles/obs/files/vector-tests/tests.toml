@@ -249,3 +249,155 @@ assert!(!contains(j, "aa:bb:cc::1"))
 assert_eq!(.unit, "cloudflared-lemdroid.service")
 assert_eq!(.priority, 3)
 '''
+
+# ---------- review fixes (Mistake Not, PR #46) ----------
+[[tests]]
+name = "nginx: /feeds/<kind>/<jwt>.xml token redacted in path, route and message"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446309.000","request_id":"r4","cf_ray":"","cf_country":"","client_ip":"198.51.100.20","host":"lemdro.id","method":"GET","request_uri":"/feeds/front/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjQyfQ.c2lnbmF0dXJlX2hlcmU.xml?sort=Hot","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"FreshRSS/1.24","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnbmF0dXJlX2hlcmU"))
+assert_eq!(.path, "/feeds/front/:arg")
+assert_eq!(.route, "/feeds/:feed")
+assert_eq!(.args, "sort=Hot")
+'''
+
+[[tests]]
+name = "nginx: /pictrs/image/delete/<token>/<file> token redacted"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446310.000","request_id":"r5","cf_ray":"","cf_country":"","client_ip":"198.51.100.21","host":"lemdro.id","method":"GET","request_uri":"/pictrs/image/delete/0f1e2d3c-DELETE-TOKEN-4b5a/abc123.webp","proto":"HTTP/1.1","status":"204","bytes":"0","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"204","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "DELETE-TOKEN"))
+assert_eq!(.path, "/pictrs/image/delete/:token/abc123.webp")
+assert_eq!(.route_class, "pictrs")
+'''
+
+[[tests]]
+name = "nginx: query allowlist (q=, username=, unknown keys and bare tokens never stored)"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446311.000","request_id":"r6","cf_ray":"","cf_country":"","client_ip":"198.51.100.22","host":"lemdro.id","method":"GET","request_uri":"/api/v3/search?q=very+private+search&username=alice_secret&sort=TopAll&limit=20&community_name=hiddencomm&Weird%20Key=v1&barevaluetoken123&type_=Posts","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "private"))
+assert!(!contains(j, "alice_secret"))
+assert!(!contains(j, "hiddencomm"))
+assert!(!contains(j, "barevaluetoken123"))
+assert!(!contains(j, "v1"))
+assert_eq!(.args, "q=REDACTED&username=REDACTED&sort=TopAll&limit=20&community_name=REDACTED&_=REDACTED&_&type_=Posts")
+'''
+
+[[tests]]
+name = "pg: DETAIL Key (...)=(...) blanked"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:13.000 EST [1350] lemmy@lemmy DETAIL:  Key (email)=(alice@example.com) already exists."
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "alice@example.com"))
+assert_eq!(.level, "DETAIL")
+assert!(contains(string!(.message), "[redacted]"))
+'''
+
+[[tests]]
+name = "pg: Failing row contains (...) blanked, also when embedded in a multi-line record"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:14.000 EST [1351] lemmy@lemmy ERROR:  null value in column \"name\" violates not-null constraint\n\tFailing row contains (42, null, bob_private, 2026-11-23).\n\tKey (id)=(4242) is still referenced"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "bob_private"))
+assert!(!contains(j, "4242"))
+assert_eq!(.kind, "error")
+assert!(contains(j, "Failing row contains (?)"))
+assert!(contains(j, "Key (id)=(?) is still referenced"))
+'''
+
+[[tests]]
+name = "pg: lock-wait DETAIL kept"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:15.000 EST [1352] lemmy@lemmy DETAIL:  Process holding the lock: 1234. Wait queue: 5678."
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(contains(string!(.message), "Process holding the lock: 1234. Wait queue: 5678."))
+'''
+
+[[tests]]
+name = "journald: cloudflared origin error URL -> path tokens and query redacted"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR  error=\"Unable to reach the origin service\" originService=http://127.0.0.1:8088 dest=https://lemdro.id/feeds/inbox/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.c2lnbmF0dXJl.xml?auth=SEKRET1&sort=New other=/password_reset/RESETTOKEN9 del=/pictrs/image/delete/DELTOKEN7/x.png auth=BEARERX"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "SEKRET1"))
+assert!(!contains(j, "RESETTOKEN9"))
+assert!(!contains(j, "DELTOKEN7"))
+assert!(!contains(j, "BEARERX"))
+assert!(contains(j, "https://lemdro.id/feeds/inbox/:arg?REDACTED"))
+assert!(contains(j, "127.0.0.0:8088"))
+'''
+
+[[tests]]
+name = "journald: short-form and scoped IPv6 truncated to /48"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "peer 2a01:4f8:c0c:1234::1 a 2a01:4f8::1 b fe80::1ff:fe23:4567:890a%eth0 c ::ffff:203.0.113.9 at 12:34:56 mac aa:bb:cc:dd:ee:ff"
+log_fields._SYSTEMD_UNIT = "docker.service"
+log_fields.PRIORITY = "6"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+m = string!(.message)
+assert!(!contains(m, "c0c:1234"))
+assert!(!contains(m, "2a01:4f8::1 "))
+assert!(!contains(m, "fe23:4567"))
+assert!(!contains(m, "203.0.113.9"))
+assert!(contains(m, "2a01:4f8:c0c::/48"))
+assert!(contains(m, "2a01:4f8::/48"))
+assert!(contains(m, "12:34:56"))
+assert!(contains(m, "aa:bb:cc:dd:ee:ff"))
+'''

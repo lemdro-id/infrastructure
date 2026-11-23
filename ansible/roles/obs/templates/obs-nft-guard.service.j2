@@ -1,0 +1,15 @@
+# {{ ansible_managed }} (role obs)
+[Unit]
+Description=lemdro.id obs: VictoriaLogs access guard (nft table inet obs_guard)
+After=nftables.service network-pre.target
+Before=obs-victorialogs.service obs-vl-ip.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/sbin/nft -f {{ obs_etc }}/obs-nft-guard.nft
+ExecReload=/usr/sbin/nft -f {{ obs_etc }}/obs-nft-guard.nft
+ExecStop=-/usr/sbin/nft delete table inet obs_guard
+
+[Install]
+WantedBy=multi-user.target

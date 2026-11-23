@@ -119,6 +119,9 @@
 - name: Vector config, VRL and tests (tested before any restart)
   ansible.builtin.include_tasks: vector.yml
 
+- name: VictoriaLogs access guard (nft, uid obs only)
+  ansible.builtin.include_tasks: nft_guard.yml
+
 - name: obs units
   ansible.builtin.template:
     src: obs-unit.service.j2

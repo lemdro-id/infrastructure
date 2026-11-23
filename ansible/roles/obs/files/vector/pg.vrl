@@ -8,6 +8,16 @@ if match(raw, r'^\S+ \S+ [A-Z]{3,4} \[\d+\] (?:\S*@\S* )?(?:qid=-?\d+ )?(?:DETAI
   abort
 }
 raw = replace(raw, r'(?s)\n[^\n]*(?:DETAIL|CONTEXT):\s+(?:parameters:|unnamed portal with parameters:|portal "[^"]*" with parameters:).*$', "")
+# 1b. Row data: DETAIL records carry column values (Key (col)=(value), Failing row contains (...), ...). Only the
+#     lock-wait/deadlock DETAILs (pids, lock modes, relation oids) are kept; any other DETAIL body is blanked.
+if match(raw, r'^\S+ \S+ [A-Z]{3,4} \[\d+\] (?:\S*@\S* )?(?:qid=-?\d+ )?DETAIL:\s') &&
+   !match(raw, r'DETAIL:\s+(?:Process(?:es)? holding the lock|Process \d+ waits for|Process \d+: )') {
+  raw = replace(raw, r'(?s)(DETAIL:)\s.*$', "$1  [redacted]")
+}
+# second fence for values embedded anywhere in a record
+raw = replace(raw, r'Key \(([^\n]*?)\)=\([^\n]*?\)( already exists| is not present| is still referenced|\.?$|\.)', "Key ($1)=(?)$2")
+raw = replace(raw, r'Failing row contains \([^\n]*\)', "Failing row contains (?)")
+raw = replace(raw, r'(invalid input (?:syntax|value) for [^:]+: )"[^"]*"', "$1\"?\"")
 
 # 2. prefix '%m [%p] %q%u@%d ' (+ ' qid=%Q' from P2); user@db and qid are optional (background processes)
 p, err = parse_regex(raw, r'(?s)^(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}) (?P<tz>[A-Z]{3,4}) \[(?P<pid>\d+)\] (?:(?P<user>[^@\s]*)@(?P<db>\S*) )?(?:qid=(?P<qid>-?\d+) )?(?P<msg>.*)$')
