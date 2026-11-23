@@ -167,7 +167,8 @@
   loop: "{{ obs_extra_tasks | default([]) }}"
 
 # ---- listener gate (PLAN §11a, C6f): nothing obs-owned may listen beyond 127.0.0.1 ----
-# Fail-closed: if the gate fails, every obs-* unit and timer is stopped (nothing else is touched) and the play fails.
+# Fail-closed: if the gate fails, every obs-* unit and timer is stopped AND disabled (so a reboot doesn't bring a bad
+# listener back; nothing else is touched) and the play fails. The next good run re-enables them.
 - name: Listener gate
   block:
     # ss, not a TCP connect: some ports only accept uid obs (nft guard), and nothing here should open a session.
@@ -200,10 +201,11 @@
           {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s') | list)
              + (obs_ss.stdout_lines | select('search', obs_port_re) | list) }}
   rescue:
-    - name: Gate failed -> stop every obs unit and timer (obs-* only)
+    - name: Gate failed -> stop and disable every obs unit and timer (obs-* only)
       ansible.builtin.systemd_service:
         name: "{{ item }}"
         state: stopped
+        enabled: false
       loop: >-
         {{ (obs_units + (obs_units_extra | default([]))) | map(attribute='name') | list + (obs_timers | default([])) }}
       failed_when: false
@@ -213,4 +215,4 @@
       ansible.builtin.fail:
         msg: >-
           Listener gate failed on {{ ansible_failed_task.name | default('?') }}:
-          {{ ansible_failed_result.msg | default('') }}. All obs-* units and timers were stopped.
+          {{ ansible_failed_result.msg | default('') }}. All obs-* units and timers were stopped and disabled.

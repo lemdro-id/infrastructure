@@ -1,8 +1,13 @@
 # {{ ansible_managed }} (role obs)
 [Unit]
 Description=lemdro.id obs: {{ item.name }}
-After=network-online.target
+After=network-online.target{% for u in item.binds_to | default([]) %} {{ u }}{% endfor %}
+
 Wants=network-online.target
+{% for u in item.binds_to | default([]) %}
+# Never runs without {{ u }}: started with it, stopped when it stops.
+BindsTo={{ u }}
+{% endfor %}
 
 [Service]
 Type=simple
