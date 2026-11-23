@@ -1,10 +1,27 @@
-# `up -d` recreates only services whose config changed; nginx.conf is bind-mounted, so reload nginx too.
+# Fresh install / steady state with lemdroid_start_services=true: bring the project up (recreates only services
+# whose config changed), then test + reload nginx with the -c path.
 - name: frontends up
   ansible.builtin.shell: |
     set -e
     docker compose up -d
-    docker compose exec -T nginx nginx -t
-    docker compose exec -T nginx nginx -s reload
+    docker compose exec -T nginx nginx -t -c /etc/nginx/lemdroid/nginx.conf
+    docker compose exec -T nginx nginx -s reload -c /etc/nginx/lemdroid/nginx.conf
   args:
     chdir: /root/frontends
   when: lemdroid_start_services | bool
+
+# nginx.conf-only change on a running box (no recreate): test, reload in place, confirm the JSON format is live.
+# Opt-in (-e frontends_reload_nginx=true); only when the container already runs
+# on the directory mount (otherwise the reload would re-read the old single-file config).
+- name: frontends reload nginx
+  ansible.builtin.shell: |
+    set -e
+    docker inspect frontends-nginx-1 --format '{{ "{{" }}json .Config.Cmd{{ "}}" }}' | grep -q /etc/nginx/lemdroid/nginx.conf
+    docker exec frontends-nginx-1 nginx -t -c /etc/nginx/lemdroid/nginx.conf
+    docker exec frontends-nginx-1 nginx -s reload -c /etc/nginx/lemdroid/nginx.conf
+    docker exec frontends-nginx-1 nginx -T -c /etc/nginx/lemdroid/nginx.conf 2>/dev/null | grep -q 'log_format obs_json'
+  args:
+    executable: /bin/bash
+  when:
+    - frontends_reload_nginx | default(false) | bool
+    - not (lemdroid_start_services | bool)   # "frontends up" already tests + reloads in that case
