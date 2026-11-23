@@ -43,11 +43,11 @@ GRANT SELECT (id, domain, updated, software, version) ON public.instance TO obs;
 GRANT SELECT (instance_id) ON public.federation_blocklist TO obs;
 
 -- obs_definer: only the columns the aggregate functions below read.
-GRANT SELECT (id, post_id, creator_id, published) ON public.comment TO obs_definer;
-GRANT SELECT (id, community_id, creator_id, published) ON public.post TO obs_definer;
+GRANT SELECT (id, post_id, creator_id, published, removed) ON public.comment TO obs_definer;
+GRANT SELECT (id, community_id, creator_id, published, removed) ON public.post TO obs_definer;
 GRANT SELECT (post_id, person_id, published) ON public.post_like TO obs_definer;
-GRANT SELECT (post_id, person_id, published) ON public.comment_like TO obs_definer;
-GRANT SELECT (id, local, instance_id) ON public.person TO obs_definer;
+GRANT SELECT (comment_id, post_id, person_id, published) ON public.comment_like TO obs_definer;
+GRANT SELECT (id, local, instance_id, bot_account) ON public.person TO obs_definer;
 GRANT SELECT (id, name, local, instance_id) ON public.community TO obs_definer;
 GRANT SELECT (id, domain) ON public.instance TO obs_definer;
 GRANT SELECT (community_id, person_id) ON public.community_follower TO obs_definer;
@@ -90,11 +90,18 @@ $f$;
 -- site_home        NULL             NULL            domain|_other  all communities; top p_top_site_home home instances
 -- users_local + users_remote = distinct users; on *_home rows users_remote is 0 for the local instance and users_local is 0
 -- otherwise. Sums over home instances are exact (each person has exactly one home instance).
+-- Defaults (review fix): bot accounts (person.bot_account) are not counted, and nothing inside mod-REMOVED content
+-- counts (a removed post: the post, its comments and all votes on it; a removed comment: the comment and votes on it).
+-- User-DELETED content still counts (the interaction happened). Pass p_exclude_bots/p_exclude_removed = false to count
+-- everything; the source rows are never modified, so any past window can be recomputed either way.
 -- Time is the row's own `published` (comment/post: the AP object's time; votes: when we stored them). Late federation can
 -- still add to a past day, so the caller re-computes D-1 and D-2.
+-- earlier 5-argument version (never applied live; kept for idempotency on test clusters)
+DROP FUNCTION IF EXISTS obs_api.interactions(timestamptz, timestamptz, int, int, int);
 CREATE OR REPLACE FUNCTION obs_api.interactions(
     p_from timestamptz, p_to timestamptz,
-    p_top_home int DEFAULT 25, p_top_site_home int DEFAULT 50, p_top_remote int DEFAULT 200)
+    p_top_home int DEFAULT 25, p_top_site_home int DEFAULT 50, p_top_remote int DEFAULT 200,
+    p_exclude_bots boolean DEFAULT true, p_exclude_removed boolean DEFAULT true)
   RETURNS TABLE (scope text, community text, community_local boolean, home_instance text, kind text,
                  users_local bigint, users_remote bigint)
   LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -113,15 +120,20 @@ BEGIN
     SELECT p.community_id, c.creator_id AS person_id, 'comment'::text AS kind
       FROM public.comment c JOIN public.post p ON p.id = c.post_id
      WHERE c.published >= p_from AND c.published < p_to
+       AND NOT (p_exclude_removed AND (c.removed OR p.removed))
     UNION ALL
     SELECT p.community_id, p.creator_id, 'post' FROM public.post p
      WHERE p.published >= p_from AND p.published < p_to
+       AND NOT (p_exclude_removed AND p.removed)
     UNION ALL
     SELECT p.community_id, l.person_id, 'vote' FROM public.post_like l JOIN public.post p ON p.id = l.post_id
      WHERE l.published >= p_from AND l.published < p_to
+       AND NOT (p_exclude_removed AND p.removed)
     UNION ALL
     SELECT p.community_id, l.person_id, 'vote' FROM public.comment_like l JOIN public.post p ON p.id = l.post_id
+      JOIN public.comment cm ON cm.id = l.comment_id
      WHERE l.published >= p_from AND l.published < p_to
+       AND NOT (p_exclude_removed AND (cm.removed OR p.removed))
   ), d AS MATERIALIZED (
     SELECT DISTINCT e.community_id, e.person_id, e.kind FROM ev e
     UNION ALL
@@ -129,6 +141,7 @@ BEGIN
   ), dp AS MATERIALIZED (
     SELECT d.community_id, d.person_id, d.kind, pe.local AS user_local, pe.instance_id AS home_id, co.local AS comm_local
       FROM d JOIN public.person pe ON pe.id = d.person_id JOIN public.community co ON co.id = d.community_id
+     WHERE NOT (p_exclude_bots AND pe.bot_account)
   ), comm AS MATERIALIZED (
     SELECT dp.community_id, dp.comm_local, dp.kind,
            count(*) FILTER (WHERE dp.user_local) AS ul, count(*) FILTER (WHERE NOT dp.user_local) AS ur
@@ -177,11 +190,11 @@ END
 $f$;
 
 ALTER FUNCTION obs_api.fed_instance_subscriptions() OWNER TO obs_definer;
-ALTER FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int) OWNER TO obs_definer;
+ALTER FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int, boolean, boolean) OWNER TO obs_definer;
 REVOKE ALL ON FUNCTION obs_api.fed_instance_subscriptions() FROM PUBLIC;
-REVOKE ALL ON FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int, boolean, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION obs_api.fed_instance_subscriptions() TO obs;
-GRANT EXECUTE ON FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int) TO obs;
+GRANT EXECUTE ON FUNCTION obs_api.interactions(timestamptz, timestamptz, int, int, int, boolean, boolean) TO obs;
 
 -- Safety asserts (the run fails and rolls back if any is false).
 DO $$ BEGIN

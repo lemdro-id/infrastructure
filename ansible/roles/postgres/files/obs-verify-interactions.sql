@@ -6,15 +6,16 @@ BEGIN READ ONLY;
 SET LOCAL statement_timeout = '180s';
 SET LOCAL TimeZone = 'UTC';
 WITH f AS (SELECT * FROM obs_api.interactions(:'from'::timestamptz, :'to'::timestamptz)),
-ev AS (
+ev AS (  -- same defaults as the function: no bot accounts, nothing inside mod-removed content (deleted still counts)
   SELECT p.community_id, c.creator_id AS person_id, 'comment' AS kind FROM comment c JOIN post p ON p.id = c.post_id
-   WHERE c.published >= :'from'::timestamptz AND c.published < :'to'::timestamptz
+   WHERE c.published >= :'from'::timestamptz AND c.published < :'to'::timestamptz AND NOT c.removed AND NOT p.removed
   UNION ALL SELECT p.community_id, p.creator_id, 'post' FROM post p
-   WHERE p.published >= :'from'::timestamptz AND p.published < :'to'::timestamptz
+   WHERE p.published >= :'from'::timestamptz AND p.published < :'to'::timestamptz AND NOT p.removed
   UNION ALL SELECT p.community_id, l.person_id, 'vote' FROM post_like l JOIN post p ON p.id = l.post_id
-   WHERE l.published >= :'from'::timestamptz AND l.published < :'to'::timestamptz
+   WHERE l.published >= :'from'::timestamptz AND l.published < :'to'::timestamptz AND NOT p.removed
   UNION ALL SELECT p.community_id, l.person_id, 'vote' FROM comment_like l JOIN post p ON p.id = l.post_id
-   WHERE l.published >= :'from'::timestamptz AND l.published < :'to'::timestamptz),
+    JOIN comment cm ON cm.id = l.comment_id
+   WHERE l.published >= :'from'::timestamptz AND l.published < :'to'::timestamptz AND NOT cm.removed AND NOT p.removed),
 ev2 AS (SELECT community_id, person_id, kind FROM ev UNION ALL SELECT community_id, person_id, 'any' FROM ev),
 -- direct per-community counts, local communities only
 direct_comm AS (
@@ -22,11 +23,11 @@ direct_comm AS (
          count(DISTINCT e.person_id) FILTER (WHERE pe.local) AS ul,
          count(DISTINCT e.person_id) FILTER (WHERE NOT pe.local) AS ur
     FROM ev2 e JOIN community co ON co.id = e.community_id AND co.local JOIN instance i ON i.id = co.instance_id
-    JOIN person pe ON pe.id = e.person_id GROUP BY 1, 2),
+    JOIN person pe ON pe.id = e.person_id AND NOT pe.bot_account GROUP BY 1, 2),
 direct_site AS (
   SELECT e.kind, count(DISTINCT e.person_id) FILTER (WHERE pe.local) AS ul,
          count(DISTINCT e.person_id) FILTER (WHERE NOT pe.local) AS ur
-    FROM ev2 e JOIN person pe ON pe.id = e.person_id GROUP BY 1)
+    FROM ev2 e JOIN person pe ON pe.id = e.person_id AND NOT pe.bot_account GROUP BY 1)
 SELECT 'local communities (comm x kind) compared' AS check, count(*)::text AS value FROM direct_comm
 UNION ALL
 SELECT 'community mismatches', count(*)::text FROM direct_comm d

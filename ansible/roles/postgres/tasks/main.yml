@@ -193,7 +193,7 @@
     psql -XAt -d lemmy -c "SELECT
       has_table_privilege('obs','public.post_like','SELECT')
       OR has_column_privilege('obs','public.person','id','SELECT')
-      OR NOT has_function_privilege('obs','obs_api.interactions(timestamptz,timestamptz,int,int,int)','EXECUTE')"
+      OR NOT has_function_privilege('obs','obs_api.interactions(timestamptz,timestamptz,int,int,int,boolean,boolean)','EXECUTE')"
   become_user: postgres
   register: obs_priv_check
   changed_when: false
