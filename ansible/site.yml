@@ -24,9 +24,14 @@
     - postgres
     - docker
     - photon
-    - pictrs
+    - role: pictrs
+      tags: [pictrs]
     - lemmy
-    - frontends
-    - cloudflared
-    - androidnews
-    - lemdroid_patches
+    - role: frontends
+      tags: [frontends]
+    - role: cloudflared
+      tags: [cloudflared]
+    - role: androidnews
+      tags: [androidnews]
+    - role: lemdroid_patches
+      tags: [lemdroid_patches]
