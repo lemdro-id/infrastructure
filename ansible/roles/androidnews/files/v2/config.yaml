@@ -120,6 +120,8 @@ scoring:
         - '\b(leak|leaked|leaks|leaker|rumou?r(ed|s)?|tipped|allegedly|unconfirmed|reportedly|codenamed?|renders?|prototype|fcc|spotted|hints? at|teases?|apk ?teardown|teardown)\b'
         - '\b(could soon|may soon|might (be|get|see|bring|launch)|could (bring|give|unlock|launch|tell|have)|is working on|is testing|preparing to|is building)\b'
         - '\b(could start|may finally|is working on)\b'
+        # Hedge verbs (replaces the queued hedge fix). Does not match "will get" / "you can now get".
+        - '\b(may|might|could|expected to) (soon |finally )?(shift|debut|launch|land|end|arrive|come|drop|switch|skip|ditch|change|feature|offer|cost|bring|get)\b'
     ai_feature:
       points: -2
       patterns: ['\b(gemini|ai mode|smart repl(y|ies)|agentic|ai-powered)\b']
