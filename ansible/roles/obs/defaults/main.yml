@@ -92,6 +92,7 @@ obs_units:
   - name: obs-victorialogs
     bin: victoria-logs
     memory_max: 256M
+    binds_to: [obs-nft-guard.service]   # PR-C: VL never runs without the uid-obs access guard
     rw: ["{{ obs_data }}/vl"]
     args:
       - "-httpListenAddr={{ obs_bind }}:{{ obs_ports.victorialogs }}"
@@ -102,6 +103,7 @@ obs_units:
   - name: obs-vl-ip
     bin: victoria-logs
     memory_max: 96M
+    binds_to: [obs-nft-guard.service]   # PR-C: VL never runs without the uid-obs access guard
     rw: ["{{ obs_data }}/vl-ip"]
     args:
       - "-httpListenAddr={{ obs_bind }}:{{ obs_ports.vl_ip }}"

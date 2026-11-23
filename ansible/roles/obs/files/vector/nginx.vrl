@@ -32,6 +32,8 @@ del(.request_uri)
 parts = split(uri, "?", limit: 2)
 path = string(parts[0]) ?? ""
 query = string(parts[1]) ?? ""
+# "//feeds//x" must not slip past the anchored rules below: collapse runs of slashes first
+path = replace(path, r'//+', "/")
 # tokens in the path (same rules in journal.vrl for URLs inside journald messages)
 path = replace(path, r'(?i)^(/(?:password_change|verify_email|password_reset|activate))/[^/]+', "$1/:token")
 path = replace(path, r'(?i)^/feeds/([a-z_]+)/[^/]+', "/feeds/$1/:arg")
@@ -43,7 +45,8 @@ if exists(um.u) {
   decoded = decode_percent(string!(um.u))
   .url_host = parse_url(decoded).host ?? "invalid"
 }
-# query: ALLOWLIST. Only these keys keep their value (truncated to 64 chars); every other value -> REDACTED, so
+# query: ALLOWLIST. Only these keys keep their value, and only if it matches ^[A-Za-z0-9_.,:-]{1,64}$ and is not a
+# JWT; every other value -> REDACTED, so
 # q=, username=, auth=, token=, url=, resource= ... never reach the 30-day store. Odd key names collapse to "_".
 allowed = ["sort", "type_", "page", "page_cursor", "limit", "listing_type", "community_id", "post_id", "comment_id",
            "parent_id", "person_id", "creator_id", "max_depth", "saved_only", "unread_only", "liked_only",
@@ -59,24 +62,54 @@ if query != "" {
       if includes(allowed, k) { bare = k }
       out = push(out, bare)
     } else if includes(allowed, k) {
-      out = push(out, k + "=" + truncate(string(kvp[1]) ?? "", 64))
+      # allowlisted key: the VALUE must also look like an id/enum/cursor, else REDACTED ("a;auth=X", "%2F..", JWTs)
+      v = string(kvp[1]) ?? ""
+      if match(v, r'^[A-Za-z0-9_.,:-]{1,64}$') && !match(v, r'eyJ[A-Za-z0-9_-]{5,}') {
+        out = push(out, k + "=" + v)
+      } else {
+        out = push(out, k + "=REDACTED")
+      }
     } else {
       out = push(out, k + "=REDACTED")
     }
   }
-  query = join!(out, "&")
+  query = join(out, "&")
+  query = replace(query, r'eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*){0,2}', ":jwt")
 }
 .path = truncate(path, 512)
 if query != "" { .args = truncate(query, 512) }
 
 # ---- route normalization (bounded label set) ----
+# Lemmy 0.19.21 HTTP API routes (src/api_routes_http.rs), relative to /api/v3. Anything else -> /api/v3/:other, so the
+# route label stays bounded by this list (~92 values), not only by the 250-value cardinality cap.
+lemmy_api_routes = [
+  "/account/list_media", "/admin/add", "/admin/list_all_media", "/admin/purge/comment", "/admin/purge/community",
+  "/admin/purge/person", "/admin/purge/post", "/admin/registration_application",
+  "/admin/registration_application/approve", "/admin/registration_application/count",
+  "/admin/registration_application/list", "/comment", "/comment/delete", "/comment/distinguish", "/comment/like",
+  "/comment/like/list", "/comment/list", "/comment/mark_as_read", "/comment/remove", "/comment/report",
+  "/comment/report/list", "/comment/report/resolve", "/comment/save", "/community", "/community/ban_user",
+  "/community/block", "/community/delete", "/community/follow", "/community/hide", "/community/list",
+  "/community/mod", "/community/remove", "/community/transfer", "/custom_emoji", "/custom_emoji/delete",
+  "/federated_instances", "/image_proxy", "/modlog", "/post", "/post/delete", "/post/feature", "/post/hide",
+  "/post/like", "/post/like/list", "/post/list", "/post/lock", "/post/mark_as_read", "/post/remove", "/post/report",
+  "/post/report/list", "/post/report/resolve", "/post/save", "/post/site_metadata", "/private_message",
+  "/private_message/delete", "/private_message/list", "/private_message/mark_as_read", "/private_message/report",
+  "/private_message/report/list", "/private_message/report/resolve", "/resolve_object", "/search", "/site",
+  "/site/block", "/user", "/user/ban", "/user/banned", "/user/block", "/user/change_password",
+  "/user/delete_account", "/user/donation_dialog_shown", "/user/export_settings", "/user/get_captcha",
+  "/user/import_settings", "/user/leave_admin", "/user/list_logins", "/user/login", "/user/logout",
+  "/user/mark_all_as_read", "/user/mention", "/user/mention/mark_as_read", "/user/password_change",
+  "/user/password_reset", "/user/register", "/user/replies", "/user/report_count", "/user/save_user_settings",
+  "/user/totp/generate", "/user/totp/update", "/user/unread_count", "/user/validate_auth", "/user/verify_email"
+]
 p = downcase(path)
 route_class = "other"
 route = "other"
 if starts_with(p, "/api/v3/") || p == "/api/v3" {
   route_class = "api"
-  r = replace(p, r'/\d+(/|$)', "/:id$1")
-  route = if match(r, r'^/api/v3(/[a-z_]+){0,3}(/:id)?$') { r } else { "/api/v3/:other" }
+  sub = replace(replace(p, r'^/api/v3', ""), r'/$', "")
+  route = if includes(lemmy_api_routes, sub) { "/api/v3" + sub } else { "/api/v3/:other" }
 } else if p == "/inbox" || match(p, r'^/(u|c)/[^/]+/inbox$') {
   route_class = "inbox"
   route = if p == "/inbox" { "/inbox" } else { replace(p, r'^/(u|c)/[^/]+/inbox$', "/$1/:name/inbox") }
@@ -88,7 +121,9 @@ if starts_with(p, "/api/v3/") || p == "/api/v3" {
   route = "/api/:other"
 } else if starts_with(p, "/.well-known/") {
   route_class = "wellknown"
-  route = if match(p, r'^/\.well-known/[a-z0-9_-]+$') { p } else { "/.well-known/:other" }
+  wk = ["/.well-known/webfinger", "/.well-known/nodeinfo", "/.well-known/host-meta", "/.well-known/security.txt",
+        "/.well-known/change-password", "/.well-known/apple-app-site-association", "/.well-known/assetlinks.json"]
+  route = if includes(wk, p) { p } else { "/.well-known/:other" }
 } else if starts_with(p, "/nodeinfo") {
   route_class = "nodeinfo"
   route = if match(p, r'^/nodeinfo(/2\.[01](\.json)?)?$') { p } else { "/nodeinfo/:other" }

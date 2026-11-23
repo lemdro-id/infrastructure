@@ -401,3 +401,123 @@ assert!(contains(m, "2a01:4f8::/48"))
 assert!(contains(m, "12:34:56"))
 assert!(contains(m, "aa:bb:cc:dd:ee:ff"))
 '''
+
+[[tests]]
+name = "nginx: allowlisted keys only keep id/enum-like values (smuggled ;auth=, JWT, percent-escapes, > 64 chars)"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r10","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/post/list?page_cursor=a;auth=SMUGGLED1&sort=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.c2lnX3gx&limit=%2Fetc&page=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&type_=All&community_id=12&show_nsfw=true&page_cursor2=z","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "SMUGGLED1"))
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gx"))
+assert!(!contains(j, "%2F"))
+assert!(!contains(j, "xxxxxxxx"))
+assert_eq!(.args, "page_cursor=REDACTED&sort=REDACTED&limit=REDACTED&page=REDACTED&type_=All&community_id=12&show_nsfw=true&page_cursor2=REDACTED")
+assert_eq!(.route, "/api/v3/post/list")
+'''
+
+[[tests]]
+name = "nginx: repeated slashes collapsed before the path-token rules"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r11","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"//feeds//front/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjJ9.c2lnX3gy.xml","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r12","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"///pictrs//image/delete/DBLSLASHTOKEN/a.webp","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r13","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"//password_reset//RESETDBL42","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gy"))
+assert!(!contains(j, "DBLSLASHTOKEN"))
+assert!(!contains(j, "RESETDBL42"))
+assert!(includes(["/feeds/front/:arg", "/pictrs/image/delete/:token/a.webp", "/password_reset/:token"], .path))
+'''
+
+[[tests]]
+name = "nginx: route label is a Lemmy 0.19 API route or /api/v3/:other; .well-known allowlisted"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r14","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/user/password_change/","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r15","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/post/123456/whatever_random_name","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r16","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/random_scanner_probe","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r17","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/.well-known/random-probe-abc","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r18","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/.well-known/webfinger?resource=acct:alice@lemdro.id","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+r = string!(.route)
+assert!(includes(["/api/v3/user/password_change", "/api/v3/:other", "/.well-known/:other", "/.well-known/webfinger"], r))
+assert!(!contains(r, "123456"))
+assert!(!contains(r, "random"))
+assert!(!contains(encode_json(.), "alice"))
+'''
+
+[[tests]]
+name = "pg: 'value \"...\" is out of range' literal and Bearer token scrubbed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:16.000 EST [1353] lemmy@lemmy ERROR:  value \"98765432109876\" is out of range for type integer at character 42 Authorization: Bearer abcDEF123456.tokXYZ"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "98765432109876"))
+assert!(!contains(j, "abcDEF123456"))
+assert!(contains(j, "is out of range for type integer"))
+'''
+
+[[tests]]
+name = "journald: Bearer token and double-slash paths"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR request failed url=https://lemdro.id//feeds//all/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjN9.c2lnX3gz.xml header=\"Authorization: Bearer JRNLBEARER12345\" b=//pictrs//image/delete/JRNLDELTOK/x.png"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gz"))
+assert!(!contains(j, "JRNLBEARER12345"))
+assert!(!contains(j, "JRNLDELTOK"))
+assert!(contains(j, "https://lemdro.id/feeds/all/:arg"))
+'''
