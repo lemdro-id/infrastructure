@@ -59,7 +59,7 @@
     owner: postgres
     group: postgres
     mode: "0644"
-  notify: restart postgresql
+  notify: apply postgresql conf
 
 - name: pg_hba - CT 105 nightly dump (barman over Tailscale)
   ansible.builtin.lineinfile:

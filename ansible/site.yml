@@ -12,6 +12,7 @@
   become: true
   pre_tasks:
     - name: Only Debian 13 (trixie) is supported
+      tags: [always]
       ansible.builtin.assert:
         that:
           - ansible_facts.distribution == 'Debian'
@@ -21,7 +22,8 @@
     - base
     - firewall
     - tailscale
-    - postgres
+    - role: postgres
+      tags: [postgres]
     - docker
     - photon
     - pictrs

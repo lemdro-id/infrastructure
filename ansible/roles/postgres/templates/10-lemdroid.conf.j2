@@ -28,5 +28,11 @@ hot_standby_feedback = off
 log_min_duration_statement = 2000
 log_lock_waits = on
 log_autovacuum_min_duration = 1000
+# Privacy: never write bind-parameter values to the server log (slow-statement and error DETAIL lines).
+# Reload-only (SUSET/USERSET). Kept here, not in a later obs conf file, so it survives any rollback of that.
+log_parameter_max_length = 0
+log_parameter_max_length_on_error = 0
+# auto_explain isn't loaded yet; this stays a placeholder and takes effect when the module is preloaded.
+auto_explain.log_parameter_max_length = 0
 timezone = 'US/Eastern'
 log_timezone = 'US/Eastern'
