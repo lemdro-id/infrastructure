@@ -6,12 +6,6 @@
   ansible.builtin.command: "pg_ctlcluster {{ postgres_version }} main reload"
   changed_when: true
 
-# Restart = short Lemmy outage. Fresh-install path only (see when:). conf.d changes use "apply postgresql conf".
-- name: restart postgresql
-  ansible.builtin.systemd_service:
-    name: "postgresql@{{ postgres_version }}-main"
-    state: restarted
-
 # conf.d changes: validate -> record load time -> reload -> wait until the reload landed -> pending_restart decision.
 # Never restarts unless -e postgres_allow_restart=true; fails closed instead. Handlers run in this order.
 - name: conf.d validate before reload
