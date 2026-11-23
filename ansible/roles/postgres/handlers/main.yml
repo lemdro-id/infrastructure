@@ -6,8 +6,68 @@
   ansible.builtin.command: "pg_ctlcluster {{ postgres_version }} main reload"
   changed_when: true
 
-# Restart = short Lemmy outage. Only fires when conf.d changed.
+# Restart = short Lemmy outage. Fresh-install path only (see when:). conf.d changes use "apply postgresql conf".
 - name: restart postgresql
   ansible.builtin.systemd_service:
     name: "postgresql@{{ postgres_version }}-main"
     state: restarted
+
+# conf.d changes: validate -> record load time -> reload -> wait until the reload landed -> pending_restart decision.
+# Never restarts unless -e postgres_allow_restart=true; fails closed instead. Handlers run in this order.
+- name: conf.d validate before reload
+  ansible.builtin.command: psql -XAtc "SELECT count(*) FROM pg_file_settings WHERE error IS NOT NULL"
+  become_user: postgres
+  register: pg_file_errors
+  changed_when: false
+  failed_when: pg_file_errors.rc != 0 or (pg_file_errors.stdout | int) > 0
+  listen: apply postgresql conf
+
+- name: conf load time before reload
+  ansible.builtin.command: psql -XAtc "SELECT extract(epoch FROM pg_conf_load_time())"
+  become_user: postgres
+  register: pg_load_before
+  changed_when: false
+  listen: apply postgresql conf
+
+- name: reload postgresql for conf
+  ansible.builtin.command: "pg_ctlcluster {{ postgres_version }} main reload"
+  changed_when: true
+  listen: apply postgresql conf
+
+- name: wait until the reload has landed (pg_conf_load_time advanced)
+  ansible.builtin.command: psql -XAtc "SELECT extract(epoch FROM pg_conf_load_time())"
+  become_user: postgres
+  register: pg_load_after
+  changed_when: false
+  until: (pg_load_after.stdout | float) > (pg_load_before.stdout | float)
+  retries: 10
+  delay: 1
+  when: not ansible_check_mode   # the reload is skipped in check mode, so there is nothing to wait for
+  listen: apply postgresql conf
+
+- name: check pending_restart (only after the reload landed)
+  ansible.builtin.command: psql -XAtc "SELECT count(*) FROM pg_settings WHERE pending_restart"
+  become_user: postgres
+  register: pg_pending_restart
+  changed_when: false
+  when: not ansible_check_mode   # the reload is skipped in check mode, so there is nothing to wait for
+  listen: apply postgresql conf
+
+- name: restart postgresql if a restart-only setting changed (explicit opt-in)
+  ansible.builtin.systemd_service:
+    name: "postgresql@{{ postgres_version }}-main"
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - (pg_pending_restart.stdout | int) > 0
+    - postgres_allow_restart | default(false) | bool
+  listen: apply postgresql conf
+
+- name: fail loudly if a restart is pending but not allowed
+  ansible.builtin.fail:
+    msg: "conf.d needs a Postgres restart (pending_restart). Re-run with -e postgres_allow_restart=true inside a maintenance window."
+  when:
+    - not ansible_check_mode
+    - (pg_pending_restart.stdout | int) > 0
+    - not (postgres_allow_restart | default(false) | bool)
+  listen: apply postgresql conf
