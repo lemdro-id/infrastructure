@@ -1,0 +1,26 @@
+# Per-process CPU/RSS groups (PLAN §5: 5 s). Names only; no command lines are exported.
+process_names:
+  - name: postgres
+    comm: [postgres]
+  - name: lemmy
+    comm: [lemmy_server]
+  - name: pict-rs
+    comm: [pict-rs]
+  - name: nginx
+    comm: [nginx]
+  - name: lemmy-ui
+    comm: [node, node-MainThread]
+  - name: mlmym
+    comm: [mlmym]
+  - name: cloudflared
+    comm: [cloudflared]
+  - name: telegraf
+    comm: [telegraf]
+  - name: dockerd
+    comm: [dockerd, containerd, containerd-shim, containerd-shim-runc-v2]
+  - name: obs
+    comm: [victoria-metric, victoria-logs, node_exporter, process-exporte, vector, postgres_export, sql_exporter, obs-interaction]
+  - name: androidnews
+    cmdline: ['poster\.py']
+  - name: other
+    cmdline: ['.+']

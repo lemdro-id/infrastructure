@@ -1,0 +1,17 @@
+# Role obs: lemdro.id observability stack (P1). Scoped run: --tags obs. Never starts/restarts Lemmy, pict-rs,
+# Postgres or the frontends containers; restarts only its own obs-* units.
+- name: Ports are unique and every bind is loopback (fails before any change)
+  ansible.builtin.assert:
+    that:
+      - (obs_ports.values() | list | unique | length) == (obs_ports.values() | list | length)
+      - obs_bind == '127.0.0.1'
+    fail_msg: "obs_ports has a clash or obs_bind is not 127.0.0.1"
+    quiet: true
+
+- name: Present
+  ansible.builtin.include_tasks: present.yml
+  when: obs_state == 'present'
+
+- name: Absent (teardown)
+  ansible.builtin.include_tasks: absent.yml
+  when: obs_state == 'absent'

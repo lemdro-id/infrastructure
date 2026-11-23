@@ -1,0 +1,187 @@
+- name: obs system user (no shell, no home login)
+  ansible.builtin.user:
+    name: "{{ obs_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ obs_data }}"
+    create_home: false
+    groups: "{{ obs_user_groups | default([]) }}"
+    append: false
+
+- name: obs directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(obs_user) }}"
+    group: "{{ item.group | default(obs_user) }}"
+    mode: "{{ item.mode | default('0750') }}"
+  loop:
+    - {path: "{{ obs_root }}", owner: root, group: root, mode: "0755"}
+    - {path: "{{ obs_root }}/bin", owner: root, group: root, mode: "0755"}
+    - {path: "{{ obs_root }}/dl", owner: root, group: root, mode: "0755"}
+    - {path: "{{ obs_etc }}", owner: root, mode: "0750"}
+    - {path: "{{ obs_data }}"}
+    - {path: "{{ obs_data }}/vm"}
+    - {path: "{{ obs_data }}/vl"}
+    - {path: "{{ obs_data }}/vl-ip", mode: "0700"}
+    - {path: "{{ obs_data }}/textfile", mode: "0755"}
+  loop_control: {label: "{{ item.path }}"}
+  register: obs_dirs
+
+- name: obs.slice (memory/CPU/IO cap for the whole stack)
+  ansible.builtin.copy:
+    src: obs.slice
+    dest: /etc/systemd/system/obs.slice
+    owner: root
+    group: root
+    mode: "0644"
+  register: obs_slice
+
+# ---- pinned binaries (SHA-256 checked; no apt repos) ----
+- name: Download release archives (checksum-verified)
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ obs_root }}/dl/{{ item.url | basename }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ obs_binaries }}"
+  loop_control: {label: "{{ item.name }} {{ item.version }}"}
+  register: obs_dl
+  # --check on a fresh host: /opt/obs/dl doesn't exist yet, so there is nowhere to download to.
+  when: not (ansible_check_mode and obs_dirs is changed)
+
+- name: Version directories
+  ansible.builtin.file:
+    path: "{{ obs_root }}/{{ item.name }}-{{ item.version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ obs_binaries }}"
+  loop_control: {label: "{{ item.name }} {{ item.version }}"}
+  when: not (ansible_check_mode and obs_dirs is changed)
+
+- name: Unpack
+  ansible.builtin.unarchive:
+    src: "{{ obs_root }}/dl/{{ item.url | basename }}"
+    dest: "{{ obs_root }}/{{ item.name }}-{{ item.version }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ obs_root }}/{{ item.name }}-{{ item.version }}/{{ item.path }}"
+  loop: "{{ obs_binaries }}"
+  loop_control: {label: "{{ item.name }} {{ item.version }}"}
+  # In --check the archive may not exist yet; nothing to unpack then.
+  when: not ansible_check_mode
+
+- name: Stable binary paths
+  ansible.builtin.file:
+    src: "{{ obs_root }}/{{ item.name }}-{{ item.version }}/{{ item.path }}"
+    dest: "{{ obs_root }}/bin/{{ item.name }}"
+    state: link
+    force: "{{ ansible_check_mode }}"
+    owner: root
+    group: root
+  loop: "{{ obs_binaries }}"
+  loop_control: {label: "{{ item.name }}"}
+  register: obs_links
+
+# ---- config ----
+- name: process-exporter groups
+  ansible.builtin.copy:
+    src: process-exporter.yml
+    dest: "{{ obs_etc }}/process-exporter.yml"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_process
+
+- name: VictoriaMetrics scrape config
+  ansible.builtin.template:
+    src: scrape.yml.j2
+    dest: "{{ obs_etc }}/scrape.yml"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_scrape
+
+- name: obs units
+  ansible.builtin.template:
+    src: obs-unit.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ obs_units + (obs_units_extra | default([])) }}"
+  loop_control: {label: "{{ item.name }}"}
+  register: obs_unit_files
+
+- name: Which units need a restart (own units only)
+  ansible.builtin.set_fact:
+    obs_restart: >-
+      {{ (obs_unit_files.results | selectattr('changed') | map(attribute='item.name') | list)
+         + (obs_links.results | selectattr('changed') | map(attribute='item.units') | flatten)
+         + (['obs-process-exporter'] if obs_cfg_process is changed else [])
+         + (obs_restart_extra | default([])) }}
+
+- name: systemd daemon-reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: obs_slice is changed or obs_unit_files is changed
+
+- name: obs units enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    enabled: true
+    state: started
+  loop: "{{ obs_units + (obs_units_extra | default([])) }}"
+  loop_control: {label: "{{ item.name }}"}
+  register: obs_started
+  # --check: a unit file that doesn't exist yet can't be queried; the real run starts it.
+  when: not (ansible_check_mode and obs_unit_files is changed)
+
+- name: Restart obs units whose binary, unit or config changed (obs units only)
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+  loop: "{{ obs_restart | unique }}"
+  # a unit that was just started for the first time needs no restart
+  when:
+    - not ansible_check_mode or obs_unit_files is not changed
+    - item not in (obs_started.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.name') | list)
+
+- name: Reload VictoriaMetrics scrape config (SIGHUP, no restart)
+  ansible.builtin.systemd_service:
+    name: obs-victoriametrics
+    state: reloaded
+  when:
+    - obs_cfg_scrape is changed
+    - "'obs-victoriametrics' not in obs_restart"
+    - "'obs-victoriametrics' not in (obs_started.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.name') | list)"
+    - not (ansible_check_mode and obs_unit_files is changed)
+
+- name: Extra obs pieces (later P1 PRs)
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop: "{{ obs_extra_tasks | default([]) }}"
+
+# ---- listener gate (PLAN §11a, C6f): nothing obs-owned may listen beyond 127.0.0.1 ----
+- name: Listening sockets (read-only)
+  ansible.builtin.command: ss -Hlntup
+  register: obs_ss
+  changed_when: false
+  check_mode: false
+
+- name: No obs listener outside 127.0.0.1, and no obs process on 0.0.0.0 / [::] / *
+  ansible.builtin.assert:
+    that:
+      - obs_bad_listeners | length == 0
+    fail_msg: "obs listener not on 127.0.0.1: {{ obs_bad_listeners }}"
+    quiet: true
+  vars:
+    obs_proc_re: '"(victoria-metric|victoria-logs|node_exporter|process-exporte|vector|postgres_export|sql_exporter)"'
+    obs_port_re: '^\S+\s+\S+\s+\d+\s+\d+\s+(?!127\.0\.0\.1:)\S+:({{ obs_ports.values() | reject("in", [8090, 9102, 10002]) | join("|") }})\s'
+    obs_bad_listeners: >-
+      {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s') | list)
+         + (obs_ss.stdout_lines | select('search', obs_port_re) | list) }}

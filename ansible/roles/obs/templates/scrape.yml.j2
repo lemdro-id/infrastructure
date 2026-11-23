@@ -1,0 +1,25 @@
+# {{ ansible_managed }} (role obs). VictoriaMetrics built-in promscrape (no vmagent). Every target is 127.0.0.1.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+  external_labels:
+    host: lemdroid-ovh
+    stack: lemdroid
+
+scrape_configs:
+  - job_name: node_fast
+    scrape_interval: 1s
+    scrape_timeout: 900ms
+    static_configs: [{targets: ["127.0.0.1:{{ obs_ports.node_fast }}"]}]
+  - job_name: node_slow
+    static_configs: [{targets: ["127.0.0.1:{{ obs_ports.node_slow }}"]}]
+  - job_name: process
+    scrape_interval: 5s
+    static_configs: [{targets: ["127.0.0.1:{{ obs_ports.process_exporter }}"]}]
+  - job_name: cloudflared
+    scrape_interval: 5s
+    static_configs: [{targets: ["127.0.0.1:20241"]}]
+  - job_name: victorialogs
+    static_configs: [{targets: ["127.0.0.1:{{ obs_ports.victorialogs }}"]}]
+  - job_name: vl_ip
+    static_configs: [{targets: ["127.0.0.1:{{ obs_ports.vl_ip }}"]}]
