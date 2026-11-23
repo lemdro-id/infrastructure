@@ -5,9 +5,14 @@ services:
     image: nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
     network_mode: host
     restart: always
+    # Directory mount (not a single-file bind): Ansible's atomic rename of nginx.conf stays visible in the
+    # container, so `nginx -s reload -c /etc/nginx/lemdroid/nginx.conf` picks it up. Every nginx -t/-T/-s
+    # against this container must carry -c /etc/nginx/lemdroid/nginx.conf.
+    command: ["nginx", "-c", "/etc/nginx/lemdroid/nginx.conf", "-g", "daemon off;"]
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx:/etc/nginx/lemdroid:ro
       - /srv/photon:/srv/photon:ro
+      - /var/log/lemdroid-nginx:/var/log/lemdroid-nginx
     logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
 
   lemmy-ui:

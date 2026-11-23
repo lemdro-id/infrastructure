@@ -1,25 +1,87 @@
 # Edge nginx + lemmy-ui + mlmym (compose project /root/frontends). Files reused from the repo's box/frontends/.
-# nginx listens on 127.0.0.1:8088 (reached by cloudflared) and 127.0.0.1:8089 (Photon static, /srv/photon).
+# nginx listens on 127.0.0.1:8088 (reached by cloudflared), 127.0.0.1:8089 (Photon static, /srv/photon) and
+# 127.0.0.1:8090 (stub_status for the obs stack).
+# nginx.conf lives in a DIRECTORY mount (/root/frontends/nginx -> /etc/nginx/lemdroid), so an Ansible copy (atomic
+# rename) is visible in the running container and a reload picks it up. Every nginx -t/-T/-s against the running
+# container carries -c /etc/nginx/lemdroid/nginx.conf.
 
-- name: /root/frontends
+- name: /root/frontends and /root/frontends/nginx
   ansible.builtin.file:
-    path: /root/frontends
+    path: "{{ item }}"
     state: directory
     owner: root
     group: root
     mode: "0755"
+  loop: [/root/frontends, /root/frontends/nginx]
 
-- name: Frontends compose file and nginx.conf (from repo box/frontends/)
+# Per-request JSON access log (full client IPs): root-only directory; the obs role grants its own user read access
+# with an ACL. Rotated daily, one old file kept (~2 days of full IPs on disk at most).
+- name: /var/log/lemdroid-nginx (JSON access log)
+  ansible.builtin.file:
+    path: /var/log/lemdroid-nginx
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: logrotate for the JSON access log (rename + nginx reopen; no copytruncate gap)
   ansible.builtin.copy:
-    src: "{{ lemdroid_repo_root }}/box/frontends/{{ item }}"
-    dest: "/root/frontends/{{ item }}"
+    dest: /etc/logrotate.d/lemdroid-nginx
     owner: root
     group: root
     mode: "0644"
-  loop:
-    - docker-compose.yml
-    - nginx.conf
+    content: |
+      # role frontends. Full client IPs: keep today + one old file only (obs privacy policy: <= 14 days anywhere).
+      /var/log/lemdroid-nginx/access.json {
+          daily
+          rotate 1
+          missingok
+          notifempty
+          nocompress
+          nocreate
+          sharedscripts
+          postrotate
+              # a failed reopen must be visible (logrotate exits non-zero -> logrotate.service failed), never hidden
+              docker exec frontends-nginx-1 nginx -c /etc/nginx/lemdroid/nginx.conf -s reopen
+          endscript
+      }
+
+- name: Frontends compose file
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/box/frontends/docker-compose.yml"
+    dest: /root/frontends/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  register: frontends_compose
   notify: frontends up
+
+- name: nginx.conf (directory mount)
+  ansible.builtin.copy:
+    src: "{{ lemdroid_repo_root }}/box/frontends/nginx/nginx.conf"
+    dest: /root/frontends/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: frontends_nginx_conf
+  notify:
+    - frontends up
+    - frontends reload nginx
+
+- name: /root/frontends/nginx holds only nginx.conf (it is mounted into the container)
+  ansible.builtin.find:
+    paths: /root/frontends/nginx
+    file_type: any
+    hidden: true
+  register: frontends_nginx_dir
+  check_mode: false
+
+- name: Nothing but nginx.conf in the mounted directory
+  ansible.builtin.assert:
+    that: (frontends_nginx_dir.files | map(attribute='path') | map('basename') | reject('equalto', 'nginx.conf') | list) == []
+    fail_msg: "unexpected files in /root/frontends/nginx: {{ frontends_nginx_dir.files | map(attribute='path') | list }}"
+    quiet: true
+  when: not ansible_check_mode or frontends_nginx_dir.files | length > 0
 
 - name: Running services (read-only)
   ansible.builtin.command: docker compose ps --status running --services
@@ -37,3 +99,50 @@
   when:
     - lemdroid_start_services | bool
     - (['nginx', 'lemmy-ui', 'mlmym'] | difference(frontends_ps.stdout_lines)) | length > 0
+
+# One-time move from the single-file bind to the directory mount, or any other nginx compose change on a running
+# box: an nginx-only recreate (~1-3 s for every lemdro.id hostname). Explicit opt-in only:
+#   -e frontends_recreate_nginx=true
+- name: nginx container args (read-only)
+  ansible.builtin.command: docker inspect frontends-nginx-1 --format '{{ "{{" }}json .Config.Cmd{{ "}}" }}'
+  register: frontends_nginx_cmd
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Recreate nginx only (opt-in; the other frontends services are not touched)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker compose config -q
+    # 1. parse-only throwaway container: same image and config dir, no network, scratch log dir (nothing live touched)
+    img=$(docker compose config --images nginx)
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    docker run --rm --network none \
+      -v /root/frontends/nginx:/etc/nginx/lemdroid:ro -v /srv/photon:/srv/photon:ro \
+      -v "$scratch":/var/log/lemdroid-nginx \
+      "$img" nginx -t -c /etc/nginx/lemdroid/nginx.conf
+    # 2. only then recreate nginx (~1-3 s)
+    docker compose up -d --no-deps nginx
+    for i in $(seq 1 20); do
+      docker exec frontends-nginx-1 nginx -t -c /etc/nginx/lemdroid/nginx.conf >/dev/null 2>&1 && break
+      sleep 0.5
+    done
+    docker exec frontends-nginx-1 nginx -t -c /etc/nginx/lemdroid/nginx.conf
+  args:
+    chdir: /root/frontends
+    executable: /bin/bash
+  when:
+    - frontends_recreate_nginx | default(false) | bool
+    - not ansible_check_mode
+  changed_when: true
+
+- name: Warn if the running nginx is not on the directory mount yet (needs the opt-in recreate)
+  ansible.builtin.debug:
+    msg: >-
+      frontends-nginx-1 still runs {{ frontends_nginx_cmd.stdout }} (single-file mount). The new nginx.conf is on disk
+      but NOT live. Re-run with -e frontends_recreate_nginx=true in a quiet hour (~1-3 s blip).
+  when:
+    - frontends_nginx_cmd.rc == 0
+    - "'/etc/nginx/lemdroid/nginx.conf' not in frontends_nginx_cmd.stdout"
+    - not (frontends_recreate_nginx | default(false) | bool)
