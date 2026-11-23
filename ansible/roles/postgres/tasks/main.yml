@@ -150,3 +150,53 @@
   loop: "{{ postgres_databases }}"
   loop_control: {label: "{{ item.name }}"}
   when: (item.name ~ '|') in pg_dbs_out.stdout
+
+# ---- observability read-only role (lemdro.id obs P1) ----
+# obs / obs_definer roles, column-scoped federation reads, and obs_api aggregate functions (counts only).
+# Reload/restart: none. Only runs psql when the SQL file changed or the roles are missing.
+# Scoped run: --tags obs_pg (does not touch conf.d, pg_hba or the service).
+- name: obs role SQL (staged)
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/postgresql/{{ postgres_version }}/main/{{ item }}"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  loop:
+    - obs-role.sql
+    - obs-role-drop.sql
+    - obs-verify-interactions.sql
+  register: obs_role_sql
+  tags: [obs_pg]
+
+- name: obs roles present? (read-only)
+  ansible.builtin.command: psql -XAtc "SELECT count(*) FROM pg_roles WHERE rolname IN ('obs','obs_definer')"
+  become_user: postgres
+  register: obs_roles_present
+  changed_when: false
+  check_mode: false
+  tags: [obs_pg]
+
+- name: Apply obs-role.sql (one transaction; fails and rolls back on any error or failed safety assert)
+  ansible.builtin.command: >-
+    psql -X -q -v ON_ERROR_STOP=1 -d lemmy
+    -f /etc/postgresql/{{ postgres_version }}/main/obs-role.sql
+  become_user: postgres
+  when: >-
+    (obs_role_sql.results | selectattr('item', 'equalto', 'obs-role.sql') | map(attribute='changed') | first)
+    or (obs_roles_present.stdout | int) < 2
+  changed_when: true
+  tags: [obs_pg]
+
+- name: obs can't read per-user tables, can call the aggregate functions (read-only check)
+  ansible.builtin.command: >-
+    psql -XAt -d lemmy -c "SELECT
+      has_table_privilege('obs','public.post_like','SELECT')
+      OR has_column_privilege('obs','public.person','id','SELECT')
+      OR NOT has_function_privilege('obs','obs_api.interactions(timestamptz,timestamptz,int,int,int,boolean,boolean)','EXECUTE')"
+  become_user: postgres
+  register: obs_priv_check
+  changed_when: false
+  failed_when: obs_priv_check.stdout != 'f'
+  when: not ansible_check_mode
+  tags: [obs_pg]
