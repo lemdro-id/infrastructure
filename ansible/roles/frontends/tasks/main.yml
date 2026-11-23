@@ -41,7 +41,8 @@
           nocreate
           sharedscripts
           postrotate
-              docker exec frontends-nginx-1 nginx -c /etc/nginx/lemdroid/nginx.conf -s reopen >/dev/null 2>&1 || true
+              # a failed reopen must be visible (logrotate exits non-zero -> logrotate.service failed), never hidden
+              docker exec frontends-nginx-1 nginx -c /etc/nginx/lemdroid/nginx.conf -s reopen
           endscript
       }
 
@@ -111,8 +112,17 @@
 
 - name: Recreate nginx only (opt-in; the other frontends services are not touched)
   ansible.builtin.shell: |
-    set -e
+    set -euo pipefail
     docker compose config -q
+    # 1. parse-only throwaway container: same image and config dir, no network, scratch log dir (nothing live touched)
+    img=$(docker compose config --images nginx)
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    docker run --rm --network none \
+      -v /root/frontends/nginx:/etc/nginx/lemdroid:ro -v /srv/photon:/srv/photon:ro \
+      -v "$scratch":/var/log/lemdroid-nginx \
+      "$img" nginx -t -c /etc/nginx/lemdroid/nginx.conf
+    # 2. only then recreate nginx (~1-3 s)
     docker compose up -d --no-deps nginx
     for i in $(seq 1 20); do
       docker exec frontends-nginx-1 nginx -t -c /etc/nginx/lemdroid/nginx.conf >/dev/null 2>&1 && break
