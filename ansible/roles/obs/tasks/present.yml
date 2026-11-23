@@ -167,21 +167,50 @@
   loop: "{{ obs_extra_tasks | default([]) }}"
 
 # ---- listener gate (PLAN §11a, C6f): nothing obs-owned may listen beyond 127.0.0.1 ----
-- name: Listening sockets (read-only)
-  ansible.builtin.command: ss -Hlntup
-  register: obs_ss
-  changed_when: false
-  check_mode: false
+# Fail-closed: if the gate fails, every obs-* unit and timer is stopped (nothing else is touched) and the play fails.
+- name: Listener gate
+  block:
+    # ss, not a TCP connect: some ports only accept uid obs (nft guard), and nothing here should open a session.
+    - name: obs ports are listening on 127.0.0.1 (waits up to 60 s for fresh starts; real run only)
+      ansible.builtin.command: ss -Hltn "sport = :{{ item }}"
+      register: obs_port_up
+      until: obs_port_up.stdout is search('127\.0\.0\.1:' ~ item ~ '\s')
+      retries: 30
+      delay: 2
+      changed_when: false
+      loop: "{{ obs_ports | dict2items | rejectattr('key', 'match', 'reserved_') | map(attribute='value') | list }}"
+      when: not ansible_check_mode
 
-- name: No obs listener outside 127.0.0.1, and no obs process on 0.0.0.0 / [::] / *
-  ansible.builtin.assert:
-    that:
-      - obs_bad_listeners | length == 0
-    fail_msg: "obs listener not on 127.0.0.1: {{ obs_bad_listeners }}"
-    quiet: true
-  vars:
-    obs_proc_re: '"(victoria-metric|victoria-logs|node_exporter|process-exporte|vector|postgres_export|sql_exporter)"'
-    obs_port_re: '^\S+\s+\S+\s+\d+\s+\d+\s+(?!127\.0\.0\.1:)\S+:({{ obs_ports.values() | reject("in", [8090, 9102, 10002]) | join("|") }})\s'
-    obs_bad_listeners: >-
-      {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s') | list)
-         + (obs_ss.stdout_lines | select('search', obs_port_re) | list) }}
+    - name: Listening sockets (read-only)
+      ansible.builtin.command: ss -Hlntup
+      register: obs_ss
+      changed_when: false
+      check_mode: false
+
+    - name: No obs listener outside 127.0.0.1, and no obs process on 0.0.0.0 / [::] / *
+      ansible.builtin.assert:
+        that:
+          - obs_bad_listeners | length == 0
+        fail_msg: "obs listener not on 127.0.0.1: {{ obs_bad_listeners }}"
+        quiet: true
+      vars:
+        obs_proc_re: '"(victoria-metric|victoria-logs|node_exporter|process-exporte|vector|postgres_export|sql_exporter)"'
+        obs_port_re: '^\S+\s+\S+\s+\d+\s+\d+\s+(?!127\.0\.0\.1:)\S+:({{ obs_ports.values() | reject("in", [8090, 9102, 10002]) | join("|") }})\s'
+        obs_bad_listeners: >-
+          {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s') | list)
+             + (obs_ss.stdout_lines | select('search', obs_port_re) | list) }}
+  rescue:
+    - name: Gate failed -> stop every obs unit and timer (obs-* only)
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: >-
+        {{ (obs_units + (obs_units_extra | default([]))) | map(attribute='name') | list + (obs_timers | default([])) }}
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: Fail the play (obs stopped; see the listener list above)
+      ansible.builtin.fail:
+        msg: >-
+          Listener gate failed on {{ ansible_failed_task.name | default('?') }}:
+          {{ ansible_failed_result.msg | default('') }}. All obs-* units and timers were stopped.
