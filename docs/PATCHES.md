@@ -99,5 +99,6 @@ Before any Lemmy upgrade, read sections 1 and 2 and remove or refresh those hook
 
 ## Data notes (one-off database edits; nothing to undo automatically)
 
+- 20 November 2026: `local_user` 11281 `email_verified` set false → true by hand (Lemmy 0.19 has no admin "mark verified"; the user proved control of the address via support@). `accepted_application` left as-is. Undo: `UPDATE local_user SET email_verified = false WHERE id = 11281;`
 - 20 November 2026, 11:38–11:45 CET (Europe/Berlin): accounts from a signup bot were deleted (9,647 `local_user`/`person` rows and dependants). A dump is at `/root/backup-bp-cleanup-20261120/`.
 - 20 November 2026, 14:56 CET: `users_active_*` zeroing (section 2); the CSV backup is listed there.
