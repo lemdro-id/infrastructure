@@ -1,0 +1,12 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }} (role obs). Own table; the firewall role's reload only replaces `table inet filter`.
+# Only unix user {{ obs_user }} may connect to VictoriaLogs (main + vl-ip, which holds full client IPs): host-network
+# containers (lemmy, pict-rs, lemmy-ui, mlmym, nginx) share 127.0.0.1 with obs. Queries: `sudo -u {{ obs_user }} curl ...`.
+table inet obs_guard
+delete table inet obs_guard
+table inet obs_guard {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    oifname "lo" tcp dport { {{ obs_ports.victorialogs }}, {{ obs_ports.vl_ip }} } meta skuid != "{{ obs_user }}" counter reject with tcp reset
+  }
+}

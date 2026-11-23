@@ -1,0 +1,224 @@
+# Vector for the lemdro.id obs stack (role obs). Every event goes through a redaction transform before any sink.
+# Sinks are all on 127.0.0.1. No Vector API listener. Timestamps: UTC.
+data_dir = "/var/lib/obs/vector"
+timezone = "UTC"
+
+[api]
+enabled = false
+
+# ---------------- sources ----------------
+[sources.nginx_file]
+type = "file"
+# Live file + the one rotated copy (rename + reopen rotation): device_and_inode keeps them distinct, so a rename
+# never re-reads lines and the tail of the old file is finished after the reopen.
+include = ["/var/log/lemdroid-nginx/access.json", "/var/log/lemdroid-nginx/access.json.1"]
+read_from = "beginning"
+ignore_older_secs = 172800
+fingerprint.strategy = "device_and_inode"
+
+[sources.pg_file]
+type = "file"
+include = ["/var/log/postgresql/postgresql-16-main.log"]   # live file only; never rotated copies
+read_from = "end"                                           # B1: never import history
+fingerprint.strategy = "device_and_inode"                   # copytruncate keeps the inode
+[sources.pg_file.multiline]
+start_pattern     = '^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} [A-Z]{3,4} \[\d+\] '
+condition_pattern = '^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} [A-Z]{3,4} \[\d+\] '
+mode              = "halt_before"
+timeout_ms        = 1000
+
+[sources.journal_units]
+type = "journald"
+include_units = ["cloudflared-lemdroid", "docker", "containerd", "postgresql@16-main", "telegraf"]
+current_boot_only = true
+since_now = true
+
+[sources.journal_kernel]
+type = "journald"
+include_matches._TRANSPORT = ["kernel"]
+current_boot_only = true
+since_now = true
+
+[sources.nginx_stub]
+type = "nginx_metrics"
+endpoints = ["http://127.0.0.1:8090/stub_status"]
+scrape_interval_secs = 1
+namespace = "nginx"
+
+[sources.vector_self]
+type = "internal_metrics"
+scrape_interval_secs = 15
+namespace = "vector"
+
+# ---------------- transforms ----------------
+[transforms.nginx_parse]
+type = "remap"
+inputs = ["nginx_file"]
+file = "/etc/obs/vector/nginx.vrl"
+drop_on_error = true
+reroute_dropped = true
+
+# 30-day store: no full IP (client_net /24 or /48 only)
+[transforms.nginx_main]
+type = "remap"
+inputs = ["nginx_parse"]
+source = '''
+del(.client_ip)
+'''
+
+# 14-day store: the full IP and the join keys only
+[transforms.nginx_ip]
+type = "remap"
+inputs = ["nginx_parse"]
+source = '''
+. = {"timestamp": .timestamp, "request_id": .request_id, "cf_ray": .cf_ray, "client_ip": .client_ip,
+     "source": "nginx", "message": "ip"}
+'''
+
+[transforms.nginx_to_metric]
+type = "log_to_metric"
+inputs = ["nginx_main"]
+[[transforms.nginx_to_metric.metrics]]
+type = "counter"
+field = "status"
+name = "requests_total"
+namespace = "lemdroid_nginx"
+tags.host = "{{ host }}"
+tags.route = "{{ route }}"
+tags.route_class = "{{ route_class }}"
+tags.method = "{{ method }}"
+tags.status_class = "{{ status_class }}"
+[[transforms.nginx_to_metric.metrics]]
+type = "counter"
+field = "status"
+name = "requests_by_client_total"
+namespace = "lemdroid_nginx"
+tags.route_class = "{{ route_class }}"
+tags.ua_class = "{{ ua_class }}"
+tags.status_class = "{{ status_class }}"
+[[transforms.nginx_to_metric.metrics]]
+type = "histogram"
+field = "request_time"
+name = "request_seconds"
+namespace = "lemdroid_nginx"
+tags.host = "{{ host }}"
+tags.route_class = "{{ route_class }}"
+tags.route = "{{ route }}"
+[[transforms.nginx_to_metric.metrics]]
+type = "counter"
+field = "bytes"
+increment_by_value = true
+name = "response_bytes_total"
+namespace = "lemdroid_nginx"
+tags.host = "{{ host }}"
+tags.route_class = "{{ route_class }}"
+
+# route values come from client-controlled paths (bounded by nginx.vrl, but /api/v3/<a>/<b>/<c> is still open):
+# hard cap per tag key; beyond it the tag is dropped (series fold together) instead of growing the TSDB.
+[transforms.nginx_metric_limit]
+type = "tag_cardinality_limit"
+inputs = ["nginx_to_metric"]
+mode = "exact"
+value_limit = 250
+limit_exceeded_action = "drop_tag"
+
+# inbound federation per sender instance (HTTP Signature keyId host)
+[transforms.fed_in_events]
+type = "filter"
+inputs = ["nginx_main"]
+condition = '.route_class == "inbox"'
+[transforms.fed_in_to_metric]
+type = "log_to_metric"
+inputs = ["fed_in_events"]
+[[transforms.fed_in_to_metric.metrics]]
+type = "counter"
+field = "status"
+name = "fed_in_requests_total"
+namespace = "lemdroid"
+tags.sig_host = "{{ sig_host }}"
+tags.status_class = "{{ status_class }}"
+[[transforms.fed_in_to_metric.metrics]]
+type = "histogram"
+field = "request_time"
+name = "fed_in_request_seconds"
+namespace = "lemdroid"
+# bound the per-instance series (PLAN §6.1: top ~200); extra senders lose the sig_host tag
+[transforms.fed_in_limit]
+type = "tag_cardinality_limit"
+inputs = ["fed_in_to_metric"]
+mode = "exact"
+value_limit = 300
+limit_exceeded_action = "drop_tag"
+
+[transforms.pg_parse]
+type = "remap"
+inputs = ["pg_file"]
+file = "/etc/obs/vector/pg.vrl"
+drop_on_error = true
+reroute_dropped = true
+
+[transforms.pg_to_metric]
+type = "log_to_metric"
+inputs = ["pg_parse"]
+[[transforms.pg_to_metric.metrics]]
+type = "counter"
+field = "kind"
+name = "log_events_total"
+namespace = "lemdroid_pg"
+tags.kind = "{{ kind }}"
+tags.level = "{{ level }}"
+
+[transforms.journal_shape]
+type = "remap"
+inputs = ["journal_units", "journal_kernel"]
+file = "/etc/obs/vector/journal.vrl"
+drop_on_error = true
+
+# Anything a remap failed on is counted, never shipped (its content may be unredacted).
+[transforms.dropped_count]
+type = "log_to_metric"
+inputs = ["nginx_parse.dropped", "pg_parse.dropped"]
+[[transforms.dropped_count.metrics]]
+type = "counter"
+field = "message"
+name = "redaction_dropped_total"
+namespace = "lemdroid_obs"
+
+# ---------------- sinks (all 127.0.0.1) ----------------
+[sinks.vl_main]
+type = "http"
+inputs = ["nginx_main", "pg_parse", "journal_shape"]
+uri = "http://127.0.0.1:9428/insert/jsonline?_stream_fields=source,kind,unit&_msg_field=message&_time_field=timestamp"
+method = "post"
+encoding.codec = "json"
+framing.method = "newline_delimited"
+compression = "gzip"
+healthcheck.enabled = false
+batch.max_bytes = 4000000
+batch.timeout_secs = 2
+buffer.type = "disk"
+buffer.max_size = 536870912
+buffer.when_full = "drop_newest"
+
+[sinks.vl_ip]
+type = "http"
+inputs = ["nginx_ip"]
+uri = "http://127.0.0.1:9429/insert/jsonline?_stream_fields=source&_msg_field=message&_time_field=timestamp"
+method = "post"
+encoding.codec = "json"
+framing.method = "newline_delimited"
+compression = "gzip"
+healthcheck.enabled = false
+batch.timeout_secs = 2
+buffer.type = "disk"
+buffer.max_size = 268435488
+buffer.when_full = "drop_newest"
+
+[sinks.vm]
+type = "prometheus_remote_write"
+inputs = ["nginx_metric_limit", "fed_in_limit", "pg_to_metric", "dropped_count", "nginx_stub", "vector_self"]
+endpoint = "http://127.0.0.1:8428/api/v1/write"
+healthcheck.enabled = false
+default_namespace = "vector"
+buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+batch.timeout_secs = 5

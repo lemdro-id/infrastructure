@@ -1,0 +1,523 @@
+# vector test /etc/obs/vector/vector.toml tests.toml  (run by the role before (re)starting Vector, and in CI)
+
+# ---------- nginx ----------
+[[tests]]
+name = "nginx: inbox POST, sig_host, IP split, UTC time"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.103","request_id":"dbfd6d51","cf_ray":"8abc123-IAD","cf_country":"DE","client_ip":"203.0.113.77","host":"lemdro.id","method":"POST","request_uri":"/inbox","proto":"HTTP/1.1","status":"202","bytes":"0","request_length":"2910","request_time":"0.031","upstream":"127.0.0.1:8080","upstream_status":"202","upstream_connect_time":"0.000","upstream_header_time":"0.030","upstream_response_time":"0.030","proxpass":"lemmy","cache":"","ua":"Lemmy/0.19.21; +https://lemmy.world","sig_host":"lemmy.world","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.route_class, "inbox")
+assert_eq!(.route, "/inbox")
+assert_eq!(.sig_host, "lemmy.world")
+assert_eq!(.ua_class, "fediverse")
+assert_eq!(.client_net, "203.0.113.0/24")
+assert!(!exists(.client_ip))
+assert_eq!(.status, 202)
+assert_eq!(.upstream_header_time, 0.03)
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-11-23T15:05:07.103+00:00")
+assert!(!contains(encode_json(.), "203.0.113.77"))
+'''
+[[tests.outputs]]
+extract_from = "nginx_ip"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_ip, "203.0.113.77")
+assert_eq!(.request_id, "dbfd6d51")
+assert_eq!(keys(.), ["cf_ray", "client_ip", "message", "request_id", "source", "timestamp"])
+'''
+
+[[tests]]
+name = "nginx: secrets in path and query are redacted, IPv6 /48, image proxy host only"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.111","request_id":"r2","cf_ray":"","cf_country":"","client_ip":"2001:db8:1234:5678::1","host":"lemdro.id","method":"GET","request_uri":"/api/v3/image_proxy?url=https%3A%2F%2Fcdn.example.org%2Fa%2Fsecret.png%3Fsig%3Dabc&auth=JWTXYZ&token=SEKRET&limit=50","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"173","request_time":"0.100","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.090","upstream_response_time":"0.100","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "JWTXYZ"))
+assert!(!contains(j, "SEKRET"))
+assert!(!contains(j, "secret.png"))
+assert!(!contains(j, "2001:db8:1234:5678::1"))
+assert_eq!(.url_host, "cdn.example.org")
+assert_eq!(.client_net, "2001:db8:1234::/48")
+assert_eq!(.route, "/api/v3/image_proxy")
+assert_eq!(.ua_class, "browser")
+assert!(contains(string!(.args), "limit=50"))
+assert!(!exists(.sig_host))
+'''
+
+[[tests]]
+name = "nginx: password reset token in path, unknown Host header bounded, numeric ids normalized"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446308.000","request_id":"r3","cf_ray":"x","cf_country":"US","client_ip":"198.51.100.9","host":"EVIL.example","method":"GET","request_uri":"/password_change/AbCdEf123token","proto":"HTTP/1.1","status":"404","bytes":"1","request_length":"1","request_time":"0.001","upstream":"-","upstream_status":"-","upstream_connect_time":"-","upstream_header_time":"-","upstream_response_time":"-","proxpass":"photon-ui","cache":"","ua":"","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446308.500","request_id":"r4","cf_ray":"y","cf_country":"US","client_ip":"198.51.100.10","host":"l.lemdro.id","method":"GET","request_uri":"/post/123456/7890","proto":"HTTP/1.1","status":"200","bytes":"1","request_length":"1","request_time":"0.2","upstream":"127.0.0.1:1234","upstream_status":"502, 200","upstream_connect_time":"0.001, 0.002","upstream_header_time":"-, 0.19","upstream_response_time":"0.01, 0.2","proxpass":"photon-ui","cache":"","ua":"Voyager/2.30","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+if .request_id == "r3" {
+  assert_eq!(.path, "/password_change/:token")
+  assert_eq!(.host, "other")
+  assert_eq!(.ua_class, "none")
+  assert!(!contains(encode_json(.), "AbCdEf123token"))
+  assert_eq!(.upstream_status, null)
+} else {
+  assert_eq!(.route, "/post/:id")
+  assert_eq!(.route_class, "html")
+  assert_eq!(.ua_class, "app")
+  assert_eq!(.upstream_status, 200)
+  assert_eq!(.upstream_header_time, 0.19)
+}
+'''
+
+# ---------- postgres (PLAN §6.4 fixtures) ----------
+[[tests]]
+name = "pg: EST slow statement -> UTC, user/db parsed, no qid, literal scrubbed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 2500.1 ms  statement: SELECT * FROM person WHERE name = 'alice' AND id = 5"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-11-23T09:54:12.154+00:00")
+assert_eq!(.user, "lemmy")
+assert_eq!(.db, "lemmy")
+assert!(!exists(.qid))
+assert_eq!(.kind, "slow_statement")
+assert_eq!(.duration_ms, 2500.1)
+assert!(!contains(string!(.message), "alice"))
+assert!(contains(string!(.message), "name = '?' AND id = 5"))
+'''
+
+[[tests]]
+name = "pg: EDT -> UTC"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-07-01 10:00:00.000 EDT [9] LOG:  checkpoint starting: time"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-07-01T14:00:00+00:00")
+assert_eq!(.kind, "checkpoint")
+assert!(!exists(.user))
+'''
+
+[[tests]]
+name = "pg: qid parsed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy qid=-123456789 LOG:  duration: 3000.0 ms  execute <unnamed>: SELECT 1"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.qid, "-123456789")
+assert_eq!(.kind, "slow_statement")
+'''
+
+[[tests]]
+name = "pg: multi-line STATEMENT is one event with full text"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 2100.0 ms  statement: SELECT c.id\n\tFROM comment c\n\tWHERE c.content = 'hello world'\n\tLIMIT 10"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+m = string!(.message)
+assert!(contains(m, "FROM comment c"))
+assert!(contains(m, "LIMIT 10"))
+assert!(!contains(m, "hello world"))
+'''
+
+[[tests]]
+name = "pg: auto_explain JSON plan, literals scrubbed incl. E'' strings, Query Parameters removed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 1500.0 ms  plan:\n{\n  \"Query Text\": \"SELECT * FROM local_user WHERE email = 'a@b.c'\",\n  \"Query Parameters\": \"$1 = 'p@q.r'\",\n  \"Plan\": {\n    \"Node Type\": \"Index Scan\",\n    \"Index Cond\": \"(email = 'a@b.c'::text)\",\n    \"Filter\": \"(name = E'x\\\\'y')\"\n  }\n}"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert_eq!(.kind, "auto_explain")
+assert!(!contains(j, "a@b.c"))
+assert!(!contains(j, "p@q.r"))
+assert!(!contains(j, "x\\'y"))
+assert_eq!(.plan.Plan."Index Cond", "(email = '?'::text)")
+assert_eq!(.plan.Plan.Filter, "(name = '?')")
+assert!(!exists(.plan."Query Parameters"))
+'''
+
+[[tests]]
+name = "pg: DETAIL parameters record dropped; embedded parameters tail stripped"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.155 EST [1347] lemmy@lemmy DETAIL:  parameters: $1 = 'secret@example.org'"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.156 EST [1347] lemmy@lemmy LOG:  duration: 2200.0 ms  execute <unnamed>: SELECT 1 WHERE x = $1\n2026-11-23 04:54:12.156 EST [1347] lemmy@lemmy DETAIL:  parameters: $1 = 'secret@example.org'\n  more"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "secret@example.org"))
+assert_eq!(.kind, "slow_statement")
+'''
+
+[[tests]]
+name = "pg: autovacuum table parsed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [77] LOG:  automatic vacuum of table \"lemmy.public.comment_aggregates\": index scans: 1"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.kind, "autovacuum")
+assert_eq!(.table, "lemmy.public.comment_aggregates")
+'''
+
+[[tests]]
+name = "pg: unknown zone flagged, never guessed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 XYZ [77] LOG:  checkpoint complete"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.ts_parse_error, true)
+'''
+
+# ---------- journald ----------
+[[tests]]
+name = "journald: IPs truncated, metadata dropped"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR Request failed error=\"x\" connIndex=1 ip=198.41.200.13 client=2001:db8:aa:bb:cc::1"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+log_fields._CMDLINE = "/usr/bin/cloudflared tunnel run --token SHOULD_NOT_SHIP"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "198.41.200.13"))
+assert!(contains(j, "198.41.200.0"))
+assert!(!contains(j, "SHOULD_NOT_SHIP"))
+assert!(!contains(j, "aa:bb:cc::1"))
+assert_eq!(.unit, "cloudflared-lemdroid.service")
+assert_eq!(.priority, 3)
+'''
+
+# ---------- review fixes (Mistake Not, PR #46) ----------
+[[tests]]
+name = "nginx: /feeds/<kind>/<jwt>.xml token redacted in path, route and message"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446309.000","request_id":"r4","cf_ray":"","cf_country":"","client_ip":"198.51.100.20","host":"lemdro.id","method":"GET","request_uri":"/feeds/front/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjQyfQ.c2lnbmF0dXJlX2hlcmU.xml?sort=Hot","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"FreshRSS/1.24","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnbmF0dXJlX2hlcmU"))
+assert_eq!(.path, "/feeds/front/:arg")
+assert_eq!(.route, "/feeds/:feed")
+assert_eq!(.args, "sort=Hot")
+'''
+
+[[tests]]
+name = "nginx: /pictrs/image/delete/<token>/<file> token redacted"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446310.000","request_id":"r5","cf_ray":"","cf_country":"","client_ip":"198.51.100.21","host":"lemdro.id","method":"GET","request_uri":"/pictrs/image/delete/0f1e2d3c-DELETE-TOKEN-4b5a/abc123.webp","proto":"HTTP/1.1","status":"204","bytes":"0","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"204","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "DELETE-TOKEN"))
+assert_eq!(.path, "/pictrs/image/delete/:token/abc123.webp")
+assert_eq!(.route_class, "pictrs")
+'''
+
+[[tests]]
+name = "nginx: query allowlist (q=, username=, unknown keys and bare tokens never stored)"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446311.000","request_id":"r6","cf_ray":"","cf_country":"","client_ip":"198.51.100.22","host":"lemdro.id","method":"GET","request_uri":"/api/v3/search?q=very+private+search&username=alice_secret&sort=TopAll&limit=20&community_name=hiddencomm&Weird%20Key=v1&barevaluetoken123&type_=Posts","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "private"))
+assert!(!contains(j, "alice_secret"))
+assert!(!contains(j, "hiddencomm"))
+assert!(!contains(j, "barevaluetoken123"))
+assert!(!contains(j, "v1"))
+assert_eq!(.args, "q=REDACTED&username=REDACTED&sort=TopAll&limit=20&community_name=REDACTED&_=REDACTED&_&type_=Posts")
+'''
+
+[[tests]]
+name = "pg: DETAIL Key (...)=(...) blanked"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:13.000 EST [1350] lemmy@lemmy DETAIL:  Key (email)=(alice@example.com) already exists."
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "alice@example.com"))
+assert_eq!(.level, "DETAIL")
+assert!(contains(string!(.message), "[redacted]"))
+'''
+
+[[tests]]
+name = "pg: Failing row contains (...) blanked, also when embedded in a multi-line record"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:14.000 EST [1351] lemmy@lemmy ERROR:  null value in column \"name\" violates not-null constraint\n\tFailing row contains (42, null, bob_private, 2026-11-23).\n\tKey (id)=(4242) is still referenced"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "bob_private"))
+assert!(!contains(j, "4242"))
+assert_eq!(.kind, "error")
+assert!(contains(j, "Failing row contains (?)"))
+assert!(contains(j, "Key (id)=(?) is still referenced"))
+'''
+
+[[tests]]
+name = "pg: lock-wait DETAIL kept"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:15.000 EST [1352] lemmy@lemmy DETAIL:  Process holding the lock: 1234. Wait queue: 5678."
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(contains(string!(.message), "Process holding the lock: 1234. Wait queue: 5678."))
+'''
+
+[[tests]]
+name = "journald: cloudflared origin error URL -> path tokens and query redacted"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR  error=\"Unable to reach the origin service\" originService=http://127.0.0.1:8088 dest=https://lemdro.id/feeds/inbox/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.c2lnbmF0dXJl.xml?auth=SEKRET1&sort=New other=/password_reset/RESETTOKEN9 del=/pictrs/image/delete/DELTOKEN7/x.png auth=BEARERX"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "SEKRET1"))
+assert!(!contains(j, "RESETTOKEN9"))
+assert!(!contains(j, "DELTOKEN7"))
+assert!(!contains(j, "BEARERX"))
+assert!(contains(j, "https://lemdro.id/feeds/inbox/:arg?REDACTED"))
+assert!(contains(j, "127.0.0.0:8088"))
+'''
+
+[[tests]]
+name = "journald: short-form and scoped IPv6 truncated to /48"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "peer 2a01:4f8:c0c:1234::1 a 2a01:4f8::1 b fe80::1ff:fe23:4567:890a%eth0 c ::ffff:203.0.113.9 at 12:34:56 mac aa:bb:cc:dd:ee:ff"
+log_fields._SYSTEMD_UNIT = "docker.service"
+log_fields.PRIORITY = "6"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+m = string!(.message)
+assert!(!contains(m, "c0c:1234"))
+assert!(!contains(m, "2a01:4f8::1 "))
+assert!(!contains(m, "fe23:4567"))
+assert!(!contains(m, "203.0.113.9"))
+assert!(contains(m, "2a01:4f8:c0c::/48"))
+assert!(contains(m, "2a01:4f8::/48"))
+assert!(contains(m, "12:34:56"))
+assert!(contains(m, "aa:bb:cc:dd:ee:ff"))
+'''
+
+[[tests]]
+name = "nginx: allowlisted keys only keep id/enum-like values (smuggled ;auth=, JWT, percent-escapes, > 64 chars)"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r10","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/post/list?page_cursor=a;auth=SMUGGLED1&sort=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.c2lnX3gx&limit=%2Fetc&page=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&type_=All&community_id=12&show_nsfw=true&page_cursor2=z","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "SMUGGLED1"))
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gx"))
+assert!(!contains(j, "%2F"))
+assert!(!contains(j, "xxxxxxxx"))
+assert_eq!(.args, "page_cursor=REDACTED&sort=REDACTED&limit=REDACTED&page=REDACTED&type_=All&community_id=12&show_nsfw=true&page_cursor2=REDACTED")
+assert_eq!(.route, "/api/v3/post/list")
+'''
+
+[[tests]]
+name = "nginx: repeated slashes collapsed before the path-token rules"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r11","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"//feeds//front/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjJ9.c2lnX3gy.xml","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r12","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"///pictrs//image/delete/DBLSLASHTOKEN/a.webp","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r13","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"//password_reset//RESETDBL42","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gy"))
+assert!(!contains(j, "DBLSLASHTOKEN"))
+assert!(!contains(j, "RESETDBL42"))
+assert!(includes(["/feeds/front/:arg", "/pictrs/image/delete/:token/a.webp", "/password_reset/:token"], .path))
+'''
+
+[[tests]]
+name = "nginx: route label is a Lemmy 0.19 API route or /api/v3/:other; .well-known allowlisted"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r14","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/user/password_change/","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r15","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/post/123456/whatever_random_name","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r16","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/api/v3/random_scanner_probe","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r17","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/.well-known/random-probe-abc","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446320.000","request_id":"r18","cf_ray":"","cf_country":"","client_ip":"198.51.100.30","host":"lemdro.id","method":"GET","request_uri":"/.well-known/webfinger?resource=acct:alice@lemdro.id","proto":"HTTP/1.1","status":"200","bytes":"5","request_length":"1","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Jerboa","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+r = string!(.route)
+assert!(includes(["/api/v3/user/password_change", "/api/v3/:other", "/.well-known/:other", "/.well-known/webfinger"], r))
+assert!(!contains(r, "123456"))
+assert!(!contains(r, "random"))
+assert!(!contains(encode_json(.), "alice"))
+'''
+
+[[tests]]
+name = "pg: 'value \"...\" is out of range' literal and Bearer token scrubbed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:16.000 EST [1353] lemmy@lemmy ERROR:  value \"98765432109876\" is out of range for type integer at character 42 Authorization: Bearer abcDEF123456.tokXYZ"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "98765432109876"))
+assert!(!contains(j, "abcDEF123456"))
+assert!(contains(j, "is out of range for type integer"))
+'''
+
+[[tests]]
+name = "journald: Bearer token and double-slash paths"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR request failed url=https://lemdro.id//feeds//all/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjN9.c2lnX3gz.xml header=\"Authorization: Bearer JRNLBEARER12345\" b=//pictrs//image/delete/JRNLDELTOK/x.png"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "eyJ"))
+assert!(!contains(j, "c2lnX3gz"))
+assert!(!contains(j, "JRNLBEARER12345"))
+assert!(!contains(j, "JRNLDELTOK"))
+assert!(contains(j, "https://lemdro.id/feeds/all/:arg"))
+'''

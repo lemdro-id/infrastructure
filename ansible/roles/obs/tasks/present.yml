@@ -1,3 +1,9 @@
+- name: acl (file ACLs for the log readers)
+  ansible.builtin.apt:
+    name: acl
+    state: present
+  register: obs_acl_pkg
+
 - name: obs system user (no shell, no home login)
   ansible.builtin.user:
     name: "{{ obs_user }}"
@@ -5,8 +11,9 @@
     shell: /usr/sbin/nologin
     home: "{{ obs_data }}"
     create_home: false
-    groups: "{{ obs_user_groups | default([]) }}"
+    groups: []
     append: false
+  register: obs_user_task
 
 - name: obs directories
   ansible.builtin.file:
@@ -25,6 +32,8 @@
     - {path: "{{ obs_data }}/vl"}
     - {path: "{{ obs_data }}/vl-ip", mode: "0700"}
     - {path: "{{ obs_data }}/textfile", mode: "0755"}
+    - {path: "{{ obs_data }}/vector", mode: "0700"}
+    - {path: "{{ obs_etc }}/vector", owner: root, mode: "0750"}
   loop_control: {label: "{{ item.path }}"}
   register: obs_dirs
 
@@ -107,6 +116,12 @@
     mode: "0640"
   register: obs_cfg_scrape
 
+- name: Vector config, VRL and tests (tested before any restart)
+  ansible.builtin.include_tasks: vector.yml
+
+- name: VictoriaLogs access guard (nft, uid obs only)
+  ansible.builtin.include_tasks: nft_guard.yml
+
 - name: obs units
   ansible.builtin.template:
     src: obs-unit.service.j2
@@ -124,6 +139,7 @@
       {{ (obs_unit_files.results | selectattr('changed') | map(attribute='item.name') | list)
          + (obs_links.results | selectattr('changed') | map(attribute='item.units') | flatten)
          + (['obs-process-exporter'] if obs_cfg_process is changed else [])
+         + (['obs-vector'] if obs_cfg_vector is changed else [])
          + (obs_restart_extra | default([])) }}
 
 - name: systemd daemon-reload

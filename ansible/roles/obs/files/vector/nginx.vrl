@@ -1,0 +1,190 @@
+# nginx obs_json line -> one request event. Runs BEFORE any sink (PLAN §6.3). The full client IP is kept only
+# in .client_ip here; nginx_main deletes it, nginx_ip keeps only {timestamp, request_id, cf_ray, client_ip}.
+. = parse_json!(string!(.message))
+
+# UTC event time from $msec (epoch seconds with ms)
+ms = to_int(to_float!(.msec) * 1000.0)
+.timestamp = from_unix_timestamp!(ms, unit: "milliseconds")
+del(.msec)
+
+.status = to_int(.status) ?? 0
+.bytes = to_int(.bytes) ?? 0
+.request_length = to_int(.request_length) ?? 0
+.request_time = to_float(.request_time) ?? 0.0
+# upstream_* may be "-", empty, or "a, b" (retries) / "a : b" (internal redirect); keep the last attempt
+for_each(["upstream_connect_time", "upstream_header_time", "upstream_response_time", "upstream_status"]) -> |_i, k| {
+  v = string(get!(., [k])) ?? ""
+  parts = split(v, r'\s*[,:]\s*')
+  last = string(parts[-1]) ?? ""
+  if k == "upstream_status" {
+    . = set!(., [k], to_int(last) ?? null)
+  } else {
+    . = set!(., [k], to_float(last) ?? null)
+  }
+}
+for_each(["cf_ray", "cf_country", "upstream", "cache", "sig_host", "ua", "proxpass"]) -> |_i, k| {
+  if get!(., [k]) == "" || get!(., [k]) == "-" { . = remove!(., [k]) }
+}
+
+# ---- path / query split and redaction ----
+uri = string(.request_uri) ?? ""
+del(.request_uri)
+parts = split(uri, "?", limit: 2)
+path = string(parts[0]) ?? ""
+query = string(parts[1]) ?? ""
+# "//feeds//x" must not slip past the anchored rules below: collapse runs of slashes first
+path = replace(path, r'//+', "/")
+# tokens in the path (same rules in journal.vrl for URLs inside journald messages)
+path = replace(path, r'(?i)^(/(?:password_change|verify_email|password_reset|activate))/[^/]+', "$1/:token")
+path = replace(path, r'(?i)^/feeds/([a-z_]+)/[^/]+', "/feeds/$1/:arg")
+path = replace(path, r'(?i)^/pictrs/image/delete/[^/]+', "/pictrs/image/delete/:token")
+path = replace(path, r'eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*', ":jwt")
+# image proxy: keep only the host of the proxied URL
+um = parse_regex(query, r'(?:^|&)url=(?P<u>[^&]*)') ?? {}
+if exists(um.u) {
+  decoded = decode_percent(string!(um.u))
+  .url_host = parse_url(decoded).host ?? "invalid"
+}
+# query: ALLOWLIST. Only these keys keep their value, and only if it matches ^[A-Za-z0-9_.,:-]{1,64}$ and is not a
+# JWT; every other value -> REDACTED, so
+# q=, username=, auth=, token=, url=, resource= ... never reach the 30-day store. Odd key names collapse to "_".
+allowed = ["sort", "type_", "page", "page_cursor", "limit", "listing_type", "community_id", "post_id", "comment_id",
+           "parent_id", "person_id", "creator_id", "max_depth", "saved_only", "unread_only", "liked_only",
+           "disliked_only", "show_hidden", "show_read", "show_nsfw", "format", "thumbnail", "blur", "dark", "lang"]
+if query != "" {
+  out = []
+  for_each(split(query, "&")) -> |_i, kv| {
+    kvp = split(kv, "=", limit: 2)
+    k = downcase(string(kvp[0]) ?? "")
+    if !match(k, r'^[a-z0-9_]{1,32}$') { k = "_" }
+    if length(kvp) < 2 {
+      bare = "_"
+      if includes(allowed, k) { bare = k }
+      out = push(out, bare)
+    } else if includes(allowed, k) {
+      # allowlisted key: the VALUE must also look like an id/enum/cursor, else REDACTED ("a;auth=X", "%2F..", JWTs)
+      v = string(kvp[1]) ?? ""
+      if match(v, r'^[A-Za-z0-9_.,:-]{1,64}$') && !match(v, r'eyJ[A-Za-z0-9_-]{5,}') {
+        out = push(out, k + "=" + v)
+      } else {
+        out = push(out, k + "=REDACTED")
+      }
+    } else {
+      out = push(out, k + "=REDACTED")
+    }
+  }
+  query = join(out, "&")
+  query = replace(query, r'eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*){0,2}', ":jwt")
+}
+.path = truncate(path, 512)
+if query != "" { .args = truncate(query, 512) }
+
+# ---- route normalization (bounded label set) ----
+# Lemmy 0.19.21 HTTP API routes (src/api_routes_http.rs), relative to /api/v3. Anything else -> /api/v3/:other, so the
+# route label stays bounded by this list (~92 values), not only by the 250-value cardinality cap.
+lemmy_api_routes = [
+  "/account/list_media", "/admin/add", "/admin/list_all_media", "/admin/purge/comment", "/admin/purge/community",
+  "/admin/purge/person", "/admin/purge/post", "/admin/registration_application",
+  "/admin/registration_application/approve", "/admin/registration_application/count",
+  "/admin/registration_application/list", "/comment", "/comment/delete", "/comment/distinguish", "/comment/like",
+  "/comment/like/list", "/comment/list", "/comment/mark_as_read", "/comment/remove", "/comment/report",
+  "/comment/report/list", "/comment/report/resolve", "/comment/save", "/community", "/community/ban_user",
+  "/community/block", "/community/delete", "/community/follow", "/community/hide", "/community/list",
+  "/community/mod", "/community/remove", "/community/transfer", "/custom_emoji", "/custom_emoji/delete",
+  "/federated_instances", "/image_proxy", "/modlog", "/post", "/post/delete", "/post/feature", "/post/hide",
+  "/post/like", "/post/like/list", "/post/list", "/post/lock", "/post/mark_as_read", "/post/remove", "/post/report",
+  "/post/report/list", "/post/report/resolve", "/post/save", "/post/site_metadata", "/private_message",
+  "/private_message/delete", "/private_message/list", "/private_message/mark_as_read", "/private_message/report",
+  "/private_message/report/list", "/private_message/report/resolve", "/resolve_object", "/search", "/site",
+  "/site/block", "/user", "/user/ban", "/user/banned", "/user/block", "/user/change_password",
+  "/user/delete_account", "/user/donation_dialog_shown", "/user/export_settings", "/user/get_captcha",
+  "/user/import_settings", "/user/leave_admin", "/user/list_logins", "/user/login", "/user/logout",
+  "/user/mark_all_as_read", "/user/mention", "/user/mention/mark_as_read", "/user/password_change",
+  "/user/password_reset", "/user/register", "/user/replies", "/user/report_count", "/user/save_user_settings",
+  "/user/totp/generate", "/user/totp/update", "/user/unread_count", "/user/validate_auth", "/user/verify_email"
+]
+p = downcase(path)
+route_class = "other"
+route = "other"
+if starts_with(p, "/api/v3/") || p == "/api/v3" {
+  route_class = "api"
+  sub = replace(replace(p, r'^/api/v3', ""), r'/$', "")
+  route = if includes(lemmy_api_routes, sub) { "/api/v3" + sub } else { "/api/v3/:other" }
+} else if p == "/inbox" || match(p, r'^/(u|c)/[^/]+/inbox$') {
+  route_class = "inbox"
+  route = if p == "/inbox" { "/inbox" } else { replace(p, r'^/(u|c)/[^/]+/inbox$', "/$1/:name/inbox") }
+} else if starts_with(p, "/pictrs/") {
+  route_class = "pictrs"
+  route = if starts_with(p, "/pictrs/image/") { "/pictrs/image/:file" } else { "/pictrs/:other" }
+} else if starts_with(p, "/api/") {
+  route_class = "api"
+  route = "/api/:other"
+} else if starts_with(p, "/.well-known/") {
+  route_class = "wellknown"
+  wk = ["/.well-known/webfinger", "/.well-known/nodeinfo", "/.well-known/host-meta", "/.well-known/security.txt",
+        "/.well-known/change-password", "/.well-known/apple-app-site-association", "/.well-known/assetlinks.json"]
+  route = if includes(wk, p) { p } else { "/.well-known/:other" }
+} else if starts_with(p, "/nodeinfo") {
+  route_class = "nodeinfo"
+  route = if match(p, r'^/nodeinfo(/2\.[01](\.json)?)?$') { p } else { "/nodeinfo/:other" }
+} else if starts_with(p, "/feeds/") {
+  route_class = "feeds"
+  route = "/feeds/:feed"
+} else if starts_with(p, "/_app/") || match(p, r'\.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|map|json|webmanifest|txt|xml)$') {
+  route_class = "static"
+  route = if starts_with(p, "/_app/immutable/") { "/_app/immutable/*" } else { "/static" }
+} else if p == "/" || p == "" {
+  route_class = "html"
+  route = "/"
+} else if match(p, r'^/(post|comment)/\d+(/\d+)?$') {
+  route_class = "html"
+  route = replace(p, r'^/(post|comment)/\d+(/\d+)?$', "/$1/:id")
+} else if match(p, r'^/(u|c|m)/[^/]+(/.*)?$') {
+  route_class = "html"
+  route = replace(p, r'^/(u|c|m)/[^/]+(/.*)?$', "/$1/:name")
+} else if match(p, r'^/(communities|search|login|signup|settings|inbox|create_post|create_community|modlog|instances|legal|admin|registration_applications|reports|saved|explore|home|about)(/.*)?$') {
+  route_class = "html"
+  route = replace(p, r'^(/[a-z_]+).*$', "$1")
+} else if p == "/nginx_alive_check" {
+  route_class = "health"
+  route = p
+}
+.route_class = route_class
+.route = route
+.status_class = to_string(floor(to_float(.status) / 100.0, precision: 0)) + "xx"
+if .status_class == "0xx" { .status_class = "unknown" }
+
+# ---- user-agent class ----
+ua = downcase(string(.ua) ?? "")
+.ua_class = if ua == "" {
+  "none"
+} else if match(ua, r'lemmy|mastodon|mbin|kbin|piefed|misskey|sharkey|akkoma|pleroma|friendica|gotosocial|peertube|pixelfed|lotide|hubzilla|iceshrimp|firefish|activitypub|bookwyrm|wordpress|writefreely|threads') {
+  "fediverse"
+} else if match(ua, r'early hints') {
+  "cf_early_hints"
+} else if match(ua, r'bot|crawl|spider|slurp|scrapy|curl|wget|python|go-http|java/|okhttp|axios|node-fetch|libwww|httpclient|uptime') {
+  "bot_or_tool"
+} else if match(ua, r'voyager|thunder|jerboa|boost|sync for lemmy|summit|connect for lemmy|eternity|liftoff|avelon|interstellar|mlem|arctic|lemmios|lemmur|racoon|quiblr|tesseract|alexandrite|photon') {
+  "app"
+} else if match(ua, r'mozilla|chrome|safari|firefox|edg/') {
+  "browser"
+} else {
+  "other"
+}
+
+# ---- IP: truncated network for the 30-day store; full IP stays only in .client_ip for nginx_ip ----
+ip = string(.client_ip) ?? ""
+.client_net = if is_ipv4(ip) {
+  (ip_subnet(ip, "/24") ?? "invalid") + "/24"
+} else if is_ipv6(ip) {
+  (ip_subnet(ip, "/48") ?? "invalid") + "/48"
+} else {
+  "invalid"
+}
+
+# Host header is client-controlled: bounded label set
+h = downcase(string(.host) ?? "")
+.host = if includes(["lemdro.id", "l.lemdro.id", "old.lemdro.id"], h) { h } else { "other" }
+
+.source = "nginx"
+.message = (string(.method) ?? "-") + " " + .route + " " + to_string(.status)

@@ -1,0 +1,47 @@
+# VictoriaLogs access guard (review fix, PR #46): only uid obs may connect to 127.0.0.1:9428/9429.
+- name: nft guard ruleset (own table inet obs_guard)
+  ansible.builtin.template:
+    src: obs-nft-guard.nft.j2
+    dest: "{{ obs_etc }}/obs-nft-guard.nft"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "{{ omit if ansible_check_mode else 'nft -c -f %s' }}"
+  register: obs_nft_rules
+
+- name: nft guard unit
+  ansible.builtin.template:
+    src: obs-nft-guard.service.j2
+    dest: /etc/systemd/system/obs-nft-guard.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: obs_nft_unit
+
+- name: nft guard daemon-reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: obs_nft_unit is changed
+
+- name: nft guard enabled and loaded
+  ansible.builtin.systemd_service:
+    name: obs-nft-guard
+    enabled: true
+    state: started
+  register: obs_nft_started
+  when: not (ansible_check_mode and obs_nft_unit is changed)
+
+- name: nft guard reloaded after a rules change
+  ansible.builtin.systemd_service:
+    name: obs-nft-guard
+    state: reloaded
+  when:
+    - obs_nft_rules is changed
+    - obs_nft_started is not changed
+    - not (ansible_check_mode and obs_nft_unit is changed)
+
+- name: nft guard table present (read-only)
+  ansible.builtin.command: nft list table inet obs_guard
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode

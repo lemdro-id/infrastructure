@@ -1,0 +1,34 @@
+# journald (cloudflared, docker, containerd, postgresql unit, telegraf, kernel) -> compact event. Keep the
+# message, unit, priority; drop the rest of the journal metadata. Same redaction as nginx.vrl for anything URL-like
+# (cloudflared origin errors carry the full request URL), then IPs: IPv4 -> x.y.z.0, IPv6 (any form, incl. short
+# "a:b::1" and IPv4-mapped) -> /48. Nothing here needs the host part.
+msg = string(.message) ?? ""
+# Authorization headers / bearer tokens anywhere in the message
+msg = replace(msg, r'(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}', "$1 REDACTED")
+# URLs / request paths: collapse repeated slashes inside a path (not the scheme's //), drop every query string, then
+# the path-token rules
+msg = replace(msg, r'([^\s:/"])//+', "$1/")
+msg = replace(msg, r'(?i)((?:https?://[^\s/"?]+)?/[^\s"?]*)\?[^\s"]*', "$1?REDACTED")
+msg = replace(msg, r'(?i)(/(?:password_change|verify_email|password_reset|activate))/[^/\s"?]+', "$1/:token")
+msg = replace(msg, r'(?i)/feeds/([a-z_]+)/[^/\s"?]+', "/feeds/$1/:arg")
+msg = replace(msg, r'(?i)/pictrs/image/delete/[^/\s"?]+', "/pictrs/image/delete/:token")
+msg = replace(msg, r'eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*', ":jwt")
+msg = replace(msg, r'(?i)\b(token|auth|jwt|password|secret|api_key)([=:]\s*)[^\s&",]+', "$1$2REDACTED")
+# IPs
+msg = replace(msg, r'\b(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}\b', "$1.0")
+msg = replace_with(msg, r'(?i)[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?:%[0-9a-z]+)?') -> |m| {
+  s = m.string
+  ip = replace(s, r'%.*$', "")
+  if is_ipv6(ip) { (ip_subnet(ip, "/48") ?? "::") + "/48" } else { s }
+}
+unit = string(._SYSTEMD_UNIT) ?? ""
+if unit == "" {
+  unit = if (string(._TRANSPORT) ?? "") == "kernel" { "kernel" } else { string(.SYSLOG_IDENTIFIER) ?? "unknown" }
+}
+. = {
+  "timestamp": .timestamp,
+  "message": msg,
+  "unit": unit,
+  "priority": to_int(.PRIORITY) ?? null,
+  "source": "journald"
+}

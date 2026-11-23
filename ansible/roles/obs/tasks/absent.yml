@@ -21,6 +21,19 @@
   ansible.builtin.include_tasks: "{{ item }}"
   loop: "{{ obs_extra_absent_tasks | default([]) }}"
 
+- name: Stop the VictoriaLogs access guard (deletes table inet obs_guard only)
+  ansible.builtin.systemd_service:
+    name: obs-nft-guard
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove the guard unit and ruleset
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: [/etc/systemd/system/obs-nft-guard.service]
+
 - name: Remove unit files and slice
   ansible.builtin.file:
     path: "/etc/systemd/system/{{ item }}"
@@ -32,6 +45,31 @@
 - name: daemon-reload
   ansible.builtin.systemd_service:
     daemon_reload: true
+
+- name: Log paths present? (read-only)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ obs_log_acls | map(attribute='dir') | list + obs_log_acls | map(attribute='files') | flatten }}"
+  register: obs_log_paths_absent
+
+- name: Remove obs access ACL entries (other ACL entries are left alone)
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    state: absent
+  loop: "{{ obs_log_paths_absent.results | selectattr('stat.exists') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+
+- name: Remove obs default ACL entries on the directories
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    default: true
+    state: absent
+  loop: "{{ obs_log_paths_absent.results | selectattr('stat.exists') | selectattr('stat.isdir') | list }}"
+  loop_control: {label: "{{ item.item }}"}
 
 - name: Remove obs directories
   ansible.builtin.file:
