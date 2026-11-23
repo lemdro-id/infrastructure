@@ -1,0 +1,19 @@
+# {{ ansible_managed }} (role obs). sql_exporter: read-only federation metrics (PLAN §6.1) as Postgres role obs
+# (peer auth over the unix socket; role is default_transaction_read_only, statement_timeout 5s, pg_monitor + the
+# federation grants and obs_api.* EXECUTE from the postgres role's obs-role.sql). No user rows, no activity bodies.
+global:
+  scrape_timeout: 10s
+  scrape_timeout_offset: 500ms
+  min_interval: 25s
+  max_connections: 2
+  max_idle_connections: 1
+  max_connection_lifetime: 10m
+
+target:
+  name: lemmy
+  data_source_name: 'postgres://{{ obs_user }}@/var/run/postgresql?database=lemmy&sslmode=disable&application_name=obs-sqlexp'
+  # URL form: path = unix-socket directory (peer auth, no password anywhere); tested with sql_exporter 0.24.14.
+  collectors: [lemdroid_federation, lemdroid_federation_subscriptions, lemdroid_pg_sessions]
+
+collector_files:
+  - "{{ obs_etc }}/sql_exporter/*.collector.yml"

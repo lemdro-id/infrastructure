@@ -7,3 +7,7 @@ dedicated-database-server
 
 # Local env files
 .env*
+
+# Python bytecode (never commit)
+__pycache__/
+*.py[cod]

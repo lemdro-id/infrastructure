@@ -1,0 +1,97 @@
+# Outbound/inbound federation health (PLAN §6.1). Every query is a few ms on live data (EXPLAIN/timing 2026-11-23).
+collector_name: lemdroid_federation
+min_interval: 25s
+
+metrics:
+  - metric_name: lemmy_fed_out_head_id
+    type: counter
+    help: "Highest outbound activity id generated (sent_activity_id_seq.last_value). Same series as activities_generated_total."
+    values: [head]
+    query: SELECT last_value AS head FROM sent_activity_id_seq
+
+  - metric_name: lemmy_fed_activities_generated_total
+    type: counter
+    help: "Outbound activities generated (monotonic sequence head)."
+    values: [head]
+    query: SELECT last_value AS head FROM sent_activity_id_seq
+
+  - metric_name: lemmy_fed_out_progress_total
+    type: counter
+    help: "Sum of last_successful_id over all federation queues; flat while activities are generated = sender stuck."
+    values: [progress]
+    query: SELECT coalesce(sum(last_successful_id), 0)::float8 AS progress FROM federation_queue_state
+
+  - metric_name: lemmy_fed_in_received_total
+    type: counter
+    help: "Accepted inbound activities (pg_stat_user_tables.n_tup_ins of received_activity; resets with stats)."
+    values: [n]
+    query: SELECT n_tup_ins::float8 AS n FROM pg_stat_user_tables WHERE relname = 'received_activity' AND schemaname = 'public'
+
+  - metric_name: lemmy_fed_out_instances
+    type: gauge
+    help: "Federation queues by state (overlapping: an instance can be lagging and failing). dead = instance.updated older than 3 d."
+    key_labels: [state]
+    values: [n]
+    query: |
+      WITH h AS (SELECT last_value AS head FROM sent_activity_id_seq),
+      q AS (
+        SELECT q.instance_id, h.head - q.last_successful_id AS lag, q.fail_count, i.updated,
+               b.instance_id IS NOT NULL AS blocked
+          FROM federation_queue_state q CROSS JOIN h
+          JOIN instance i ON i.id = q.instance_id
+          LEFT JOIN federation_blocklist b ON b.instance_id = q.instance_id)
+      SELECT 'ok' AS state, count(*) FILTER (WHERE fail_count = 0 AND lag <= 100 AND NOT blocked)::float8 AS n FROM q
+      UNION ALL SELECT 'lagging', count(*) FILTER (WHERE lag > 100 AND NOT blocked) FROM q
+      UNION ALL SELECT 'failing', count(*) FILTER (WHERE fail_count > 0 AND NOT blocked) FROM q
+      UNION ALL SELECT 'dead', count(*) FILTER (WHERE updated < now() - interval '3 days') FROM q
+      UNION ALL SELECT 'blocked', count(*) FILTER (WHERE blocked) FROM q
+      UNION ALL SELECT 'total', count(*) FROM q
+
+  # Per-instance series, bounded: pinned majors always; others only while they lag or fail AND delivered something in
+  # the last 7 days (dead/unreachable instances stay in the counts above). Hard cap 500 series (live 2026-11-23: 496).
+  - metric_name: lemmy_fed_out_lag_activities
+    type: gauge
+    help: "Activities not yet delivered to the instance (head - last_successful_id)."
+    key_labels: [instance, major]
+    values: [lag]
+    query_ref: fed_out_per_instance
+  - metric_name: lemmy_fed_out_last_success_age_seconds
+    type: gauge
+    help: "Seconds since the newest activity delivered to the instance was published."
+    key_labels: [instance, major]
+    values: [last_success_age]
+    query_ref: fed_out_per_instance
+  - metric_name: lemmy_fed_out_fail_count
+    type: gauge
+    help: "Consecutive delivery failures (federation_queue_state.fail_count)."
+    key_labels: [instance, major]
+    values: [fail_count]
+    query_ref: fed_out_per_instance
+  - metric_name: lemmy_fed_out_last_retry_age_seconds
+    type: gauge
+    help: "Seconds since the last retry to the instance."
+    key_labels: [instance, major]
+    values: [last_retry_age]
+    query_ref: fed_out_per_instance
+
+queries:
+  - query_name: fed_out_per_instance
+    query: |
+      WITH h AS (SELECT last_value AS head FROM sent_activity_id_seq)
+      SELECT i.domain AS instance,
+             (i.domain IN ('lemmy.world','lemmy.ml','sh.itjust.works','lemmy.zip','programming.dev','feddit.org',
+                           'lemmy.dbzer0.com','lemmy.ca','beehaw.org','discuss.tchncs.de','piefed.social',
+                           'lemmy.blahaj.zone'))::text AS major,
+             (h.head - q.last_successful_id)::float8 AS lag,
+             coalesce(extract(epoch FROM now() - q.last_successful_published_time), -1)::float8 AS last_success_age,
+             q.fail_count::float8 AS fail_count,
+             coalesce(extract(epoch FROM now() - q.last_retry), -1)::float8 AS last_retry_age
+        FROM federation_queue_state q CROSS JOIN h
+        JOIN instance i ON i.id = q.instance_id
+       WHERE i.domain IN ('lemmy.world','lemmy.ml','sh.itjust.works','lemmy.zip','programming.dev','feddit.org',
+                          'lemmy.dbzer0.com','lemmy.ca','beehaw.org','discuss.tchncs.de','piefed.social',
+                          'lemmy.blahaj.zone')
+          OR ((h.head - q.last_successful_id > 0 OR q.fail_count > 0)
+              AND q.last_successful_published_time > now() - interval '7 days')
+       ORDER BY 2 DESC, 3 DESC
+       LIMIT 500

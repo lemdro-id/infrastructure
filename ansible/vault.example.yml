@@ -30,3 +30,7 @@ vault_postgres_barman_password: ""         # must match CT 105 ~barman/.pgpass
 # /etc/default/telegraf (INFLUX_TOKEN): Influx 2 token with write on bucket `infra` only (org `home`, CT 102).
 # Empty = telegraf is installed and configured but not started.
 vault_influx_telegraf_token: ""
+
+# obs interactions rollup (role obs): Influx 2 token with write on bucket `lemdroid_interactions` only (org `home`,
+# CT 102). Empty = the hourly job still runs but writes nothing to Influx (query + health metrics only).
+vault_obs_influx_interactions_token: ""

@@ -1,0 +1,46 @@
+# {{ ansible_managed }} (role obs). Interactions rollup: counts only, read-only Postgres role obs (peer auth).
+[Unit]
+Description=lemdro.id obs: interactions rollup (Postgres -> Influx lemdroid_interactions)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ obs_user }}
+Group={{ obs_user }}
+Slice=obs.slice
+MemoryMax=128M
+CPUWeight=20
+IOWeight=20
+TimeoutStartSec=30min
+Environment=TZ=UTC
+Environment=OBS_INFLUX_URL={{ obs_interactions_influx_url }}
+Environment=OBS_INFLUX_ORG={{ obs_interactions_influx_org }}
+Environment=OBS_INFLUX_BUCKET={{ obs_interactions_influx_bucket }}
+Environment=OBS_INTERACTIONS_TOP_HOME={{ obs_interactions_top_home }}
+Environment=OBS_INTERACTIONS_TOP_SITE_HOME={{ obs_interactions_top_site_home }}
+Environment=OBS_INTERACTIONS_TOP_REMOTE={{ obs_interactions_top_remote }}
+{% if obs_interactions_influx_token | length > 0 %}
+# root-only file, handed to the job as a systemd credential (never in the environment or argv)
+LoadCredential=influx-token:{{ obs_etc }}/influx-interactions.token
+{% endif %}
+ExecStart={{ obs_root }}/libexec/obs-interactions
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths={{ obs_data }}/textfile {{ obs_data }}/interactions

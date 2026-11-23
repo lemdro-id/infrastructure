@@ -1,0 +1,22 @@
+# Session health that postgres_exporter does not give directly (pg_monitor only; no query text is read).
+collector_name: lemdroid_pg_sessions
+min_interval: 25s
+
+metrics:
+  - metric_name: lemdroid_pg_oldest_xact_age_seconds
+    type: gauge
+    help: "Age of the oldest open transaction, by backend state (0 if none)."
+    key_labels: [state]
+    values: [age]
+    query: |
+      SELECT s.state, coalesce(max(extract(epoch FROM now() - a.xact_start)), 0)::float8 AS age
+        FROM (VALUES ('active'), ('idle in transaction'), ('idle in transaction (aborted)')) s(state)
+        LEFT JOIN pg_stat_activity a ON a.state = s.state AND a.backend_type = 'client backend'
+       GROUP BY s.state
+  - metric_name: lemdroid_pg_blocked_sessions
+    type: gauge
+    help: "Client backends currently waiting on a lock held by another backend."
+    values: [n]
+    query: |
+      SELECT count(*)::float8 AS n FROM pg_stat_activity
+       WHERE backend_type = 'client backend' AND wait_event_type = 'Lock'
