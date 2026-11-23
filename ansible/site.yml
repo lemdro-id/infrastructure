@@ -37,3 +37,6 @@
       tags: [androidnews]
     - role: lemdroid_patches
       tags: [lemdroid_patches]
+    # Observability (lemdro.id obs plan P1). Own obs-* units only; obs_state=absent tears it down.
+    - role: obs
+      tags: [obs]

@@ -1,0 +1,45 @@
+# Full teardown (PLAN §13 P1 rollback): obs_state=absent. Removes only obs things. Data in /var/lib/obs is deleted.
+# Postgres role/grants: postgres role, obs-role-drop.sql (separate, see APPLY.md). Influx buckets: CT 102, by id.
+- name: Stop and disable obs units
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    state: stopped
+    enabled: false
+  loop: "{{ obs_units + (obs_units_extra | default([])) }}"
+  loop_control: {label: "{{ item.name }}"}
+  failed_when: false
+
+- name: Stop and disable obs timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ obs_timers | default([]) }}"
+  failed_when: false
+
+- name: Extra teardown (later P1 PRs)
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop: "{{ obs_extra_absent_tasks | default([]) }}"
+
+- name: Remove unit files and slice
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop: >-
+    {{ (obs_units + (obs_units_extra | default([]))) | map(attribute='name') | map('regex_replace', '$', '.service') | list
+       + (obs_timer_files | default([])) + ['obs.slice'] }}
+
+- name: daemon-reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Remove obs directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: ["{{ obs_root }}", "{{ obs_etc }}", "{{ obs_data }}"]
+
+- name: Remove obs user
+  ansible.builtin.user:
+    name: "{{ obs_user }}"
+    state: absent

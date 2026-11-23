@@ -1,0 +1,59 @@
+# {{ ansible_managed }} (role obs)
+[Unit]
+Description=lemdro.id obs: {{ item.name }}
+After=network-online.target{% for u in item.binds_to | default([]) %} {{ u }}{% endfor %}
+
+Wants=network-online.target
+{% for u in item.binds_to | default([]) %}
+# Never runs without {{ u }}: started with it, stopped when it stops.
+BindsTo={{ u }}
+{% endfor %}
+
+[Service]
+Type=simple
+User={{ item.user | default(obs_user) }}
+Group={{ item.group | default(obs_user) }}
+{% if item.supplementary_groups | default([]) %}
+SupplementaryGroups={{ item.supplementary_groups | join(' ') }}
+{% endif %}
+Slice=obs.slice
+MemoryMax={{ item.memory_max }}
+{% for e in item.env | default([]) %}
+Environment={{ e }}
+{% endfor %}
+{% for e in item.env_files | default([]) %}
+EnvironmentFile={{ e }}
+{% endfor %}
+ExecStart={{ obs_root }}/bin/{{ item.bin }}{% for a in item.args %} \
+  {{ a }}{% endfor %}
+
+{% if item.reload_hup | default(false) %}
+ExecReload=/bin/kill -HUP $MAINPID
+{% endif %}
+Restart=on-failure
+RestartSec=5s
+# Hardening: no privilege gain, read-only OS, own /tmp, no home dirs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices={{ 'false' if item.devices | default(false) else 'true' }}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+{% if item.rw %}
+ReadWritePaths={{ item.rw | join(' ') }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

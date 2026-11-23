@@ -1,0 +1,143 @@
+# lemdro.id observability stack on lemdroid-ovh (plan: lemdroid-observability-20261123 rev 4, P1).
+# present = install/configure/start; absent = full teardown (tasks/absent.yml). Nothing here touches Lemmy,
+# pict-rs, Postgres config or the frontends containers.
+obs_state: present
+
+obs_user: obs
+obs_root: /opt/obs
+obs_etc: /etc/obs
+obs_data: /var/lib/obs
+
+# Every obs listener, in one map, so a clash fails the play (PLAN §11a; the old 9101 node-slow vs pict-rs clash).
+# All bind 127.0.0.1. Reserved = owned by other services (P2), listed only so nothing here can take them.
+obs_bind: 127.0.0.1
+obs_ports:
+  victoriametrics: 8428
+  victorialogs: 9428
+  vl_ip: 9429
+  node_fast: 9100
+  node_slow: 9101
+  process_exporter: 9256
+  reserved_pictrs_metrics: 9102     # P2: PICTRS__METRICS__PROMETHEUS_ADDRESS=127.0.0.1:9102
+  reserved_lemmy_metrics: 10002     # P2: config.hjson prometheus { bind: 127.0.0.1, port: 10002 }
+  reserved_nginx_stub_status: 8090  # frontends: stub_status, 127.0.0.1 only
+  reserved_vmalert: 8880
+  reserved_alertmanager: 9093
+
+# Retention (PLAN §10). Raw OVH data is not backed up (30-day working set).
+obs_vm_retention: 30d
+obs_vm_min_free_disk: 20GiB
+obs_vm_memory_allowed: 256MB
+obs_vl_retention: 30d
+obs_vl_max_disk: 15GiB
+obs_vl_ip_retention: 14d            # full client IPs: 14 days, nowhere else
+obs_vl_ip_max_disk: 1GiB
+
+# Pinned upstream releases, verified against each project's published SHA-256 list (2026-11-23).
+obs_binaries:
+  - name: victoria-metrics
+    version: v1.157.0
+    url: https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.157.0/victoria-metrics-linux-amd64-v1.157.0.tar.gz
+    sha256: 7b31192da6cf805b8b9244a904b022948e8022a067a822c30cb9f94600d0c387
+    path: victoria-metrics-prod
+    units: [obs-victoriametrics]
+  - name: victoria-logs
+    version: v1.54.0
+    url: https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/v1.54.0/victoria-logs-linux-amd64-v1.54.0.tar.gz
+    sha256: 739e78c82294520b6079bc8a6ae32a1f9fb95a543092929a53a2fe9ab7383016
+    path: victoria-logs-prod
+    units: [obs-victorialogs, obs-vl-ip]
+  - name: node_exporter
+    version: 1.13.1
+    url: https://github.com/prometheus/node_exporter/releases/download/v1.13.1/node_exporter-1.13.1.linux-amd64.tar.gz
+    sha256: 5c00c5234f1ee45900b25539a5a0ab82146a098c15c16a4ec3bc855b597a6477
+    path: node_exporter-1.13.1.linux-amd64/node_exporter
+    units: [obs-node-fast, obs-node-slow]
+  - name: process-exporter
+    version: 0.8.7
+    url: https://github.com/ncabatoff/process-exporter/releases/download/v0.8.7/process-exporter-0.8.7.linux-amd64.tar.gz
+    sha256: 6d274cca5e94c6a25e55ec05762a472561859ce0a05b984aaedb67dd857ceee2
+    path: process-exporter-0.8.7.linux-amd64/process-exporter
+    units: [obs-process-exporter]
+
+# systemd units. All run as obs in obs.slice (MemoryHigh 1.25G / MemoryMax 1.5G for the whole slice), plus a
+# per-unit MemoryMax. rw = extra writable paths (ProtectSystem=strict everywhere).
+obs_units:
+  - name: obs-victoriametrics
+    bin: victoria-metrics
+    memory_max: 384M
+    rw: ["{{ obs_data }}/vm"]
+    reload_hup: true      # SIGHUP re-reads -promscrape.config
+    args:
+      - "-httpListenAddr={{ obs_bind }}:{{ obs_ports.victoriametrics }}"
+      - "-storageDataPath={{ obs_data }}/vm"
+      - "-retentionPeriod={{ obs_vm_retention }}"
+      - "-storage.minFreeDiskSpaceBytes={{ obs_vm_min_free_disk }}"
+      - "-memory.allowedBytes={{ obs_vm_memory_allowed }}"
+      - "-promscrape.config={{ obs_etc }}/scrape.yml"
+      - "-promscrape.config.strictParse=true"
+      - "-selfScrapeInterval=15s"
+      - "-loggerTimezone=UTC"
+  - name: obs-victorialogs
+    bin: victoria-logs
+    memory_max: 256M
+    rw: ["{{ obs_data }}/vl"]
+    args:
+      - "-httpListenAddr={{ obs_bind }}:{{ obs_ports.victorialogs }}"
+      - "-storageDataPath={{ obs_data }}/vl"
+      - "-retentionPeriod={{ obs_vl_retention }}"
+      - "-retention.maxDiskSpaceUsageBytes={{ obs_vl_max_disk }}"
+      - "-loggerTimezone=UTC"
+  - name: obs-vl-ip
+    bin: victoria-logs
+    memory_max: 96M
+    rw: ["{{ obs_data }}/vl-ip"]
+    args:
+      - "-httpListenAddr={{ obs_bind }}:{{ obs_ports.vl_ip }}"
+      - "-storageDataPath={{ obs_data }}/vl-ip"
+      - "-retentionPeriod={{ obs_vl_ip_retention }}"
+      - "-retention.maxDiskSpaceUsageBytes={{ obs_vl_ip_max_disk }}"
+      - "-loggerTimezone=UTC"
+  - name: obs-node-fast
+    bin: node_exporter
+    memory_max: 32M
+    rw: []
+    args:
+      - "--web.listen-address={{ obs_bind }}:{{ obs_ports.node_fast }}"
+      - "--collector.disable-defaults"
+      - "--collector.cpu"
+      - "--collector.pressure"
+      - "--collector.meminfo"
+      - "--collector.vmstat"
+      - "--collector.netdev"
+      - "--collector.netstat"
+      - "--collector.sockstat"
+      - "--collector.conntrack"
+      - "--collector.diskstats"
+      - "--collector.loadavg"
+      - "--collector.schedstat"
+      - "--collector.softnet"
+  - name: obs-node-slow
+    bin: node_exporter
+    memory_max: 32M
+    rw: []
+    args:
+      - "--web.listen-address={{ obs_bind }}:{{ obs_ports.node_slow }}"
+      - "--collector.disable-defaults"
+      - "--collector.filesystem"
+      - "--collector.mdadm"
+      - "--collector.hwmon"
+      - "--collector.nvme"
+      - "--collector.systemd"
+      - "--collector.timex"
+      - "--collector.uname"
+      - "--collector.textfile"
+      - "--collector.textfile.directory={{ obs_data }}/textfile"
+  - name: obs-process-exporter
+    bin: process-exporter
+    memory_max: 48M
+    rw: []
+    args:
+      - "-web.listen-address={{ obs_bind }}:{{ obs_ports.process_exporter }}"
+      - "-config.path={{ obs_etc }}/process-exporter.yml"
+      - "-threads=false"
