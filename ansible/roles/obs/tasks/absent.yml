@@ -33,6 +33,31 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
 
+- name: Log paths present? (read-only)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ obs_log_acls | map(attribute='dir') | list + obs_log_acls | map(attribute='files') | flatten }}"
+  register: obs_log_paths_absent
+
+- name: Remove obs access ACL entries (other ACL entries are left alone)
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    state: absent
+  loop: "{{ obs_log_paths_absent.results | selectattr('stat.exists') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+
+- name: Remove obs default ACL entries on the directories
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    default: true
+    state: absent
+  loop: "{{ obs_log_paths_absent.results | selectattr('stat.exists') | selectattr('stat.isdir') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+
 - name: Remove obs directories
   ansible.builtin.file:
     path: "{{ item }}"

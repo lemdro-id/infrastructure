@@ -1,0 +1,88 @@
+# Postgres stderr log record (multi-line, one record per prefixed line) -> event. Runs BEFORE any sink.
+# Order matters (PLAN §6.4): 1 drop parameter values, 2 parse prefix, 3 EST/EDT -> UTC, 4 classify, 5 scrub literals.
+raw = string!(.message)
+
+# 1. B1: bind-parameter values never leave this transform. EARLYFIX set log_parameter_max_length(_on_error)=0, so
+#    these lines shouldn't exist; this is the second fence.
+if match(raw, r'^\S+ \S+ [A-Z]{3,4} \[\d+\] (?:\S*@\S* )?(?:qid=-?\d+ )?(?:DETAIL|CONTEXT):\s+(?:parameters:|unnamed portal with parameters:|portal "[^"]*" with parameters:)') {
+  abort
+}
+raw = replace(raw, r'(?s)\n[^\n]*(?:DETAIL|CONTEXT):\s+(?:parameters:|unnamed portal with parameters:|portal "[^"]*" with parameters:).*$', "")
+
+# 2. prefix '%m [%p] %q%u@%d ' (+ ' qid=%Q' from P2); user@db and qid are optional (background processes)
+p, err = parse_regex(raw, r'(?s)^(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}) (?P<tz>[A-Z]{3,4}) \[(?P<pid>\d+)\] (?:(?P<user>[^@\s]*)@(?P<db>\S*) )?(?:qid=(?P<qid>-?\d+) )?(?P<msg>.*)$')
+if err != null {
+  . = {"timestamp": now(), "source": "postgres", "kind": "unparsed", "parse_error": true, "message": "unparsed postgres log record (content dropped)"}
+} else {
+  # 3. B3: log_timezone is US/Eastern; map the abbreviation explicitly; anything else is flagged, never guessed.
+  offsets = {"EST": "-05:00", "EDT": "-04:00", "UTC": "+00:00", "GMT": "+00:00"}
+  off = get(offsets, [p.tz]) ?? null
+  ts = null
+  if off != null { ts = parse_timestamp(string!(p.ts) + string!(off), "%Y-%m-%d %H:%M:%S%.3f%:z") ?? null }
+  ev = {"source": "postgres", "pid": to_int(p.pid) ?? null}
+  if ts == null {
+    ev.timestamp = now()
+    ev.ts_parse_error = true
+  } else {
+    ev.timestamp = ts
+  }
+  if p.user != null && p.user != "" { ev.user = p.user }
+  if p.db != null && p.db != "" { ev.db = p.db }
+  if p.qid != null { ev.qid = p.qid }
+
+  msg = string!(p.msg)
+  lv = parse_regex(msg, r'^(?P<level>[A-Z]+\d?):\s+') ?? {}
+  ev.level = if exists(lv.level) { lv.level } else { "UNKNOWN" }
+
+  # 4. classify
+  kind = "other"
+  d = parse_regex(msg, r'^LOG:\s+duration: (?P<ms>[0-9.]+) ms\s+(?P<what>plan|statement|execute|bind|parse)') ?? {}
+  if exists(d.ms) {
+    ev.duration_ms = to_float(d.ms) ?? null
+    kind = if d.what == "plan" { "auto_explain" } else { "slow_statement" }
+  } else if match(msg, r'automatic (vacuum|analyze) of table') {
+    kind = "autovacuum"
+    t = parse_regex(msg, r'automatic (?:vacuum|analyze) of table "(?P<t>[^"]+)"') ?? {}
+    if exists(t.t) { ev.table = t.t }
+  } else if match(msg, r'(still waiting for|acquired) \w+Lock|deadlock detected') {
+    kind = "lock_wait"
+  } else if match(msg, r'^LOG:\s+temporary file:') {
+    kind = "temp_file"
+  } else if match(msg, r'^LOG:\s+checkpoint (starting|complete)') {
+    kind = "checkpoint"
+  } else if includes(["ERROR", "FATAL", "PANIC"], ev.level) {
+    kind = "error"
+  } else if ev.level == "STATEMENT" {
+    kind = "statement"
+  }
+  ev.kind = kind
+
+  # 5. B4: scrub string literals (keep ::casts); dollar-quoted bodies too. Numbers stay.
+  if kind == "auto_explain" {
+    j = parse_regex(msg, r'(?s)^(?P<head>.*?plan:)\s*(?P<json>\{.*\})\s*$') ?? {}
+    pj = parse_json(string(j.json) ?? "") ?? null
+    if is_object(pj) {
+      plan = object!(pj)
+      plan = map_values(plan, recursive: true) -> |v| {
+        if is_string(v) {
+          s = string!(v)
+          s = replace(s, r'(?s)[Ee]\'(?:[^\'\\]|\\.|\'\')*\'', "'?'")
+          s = replace(s, r'(?s)\'(?:[^\']|\'\')*\'', "'?'")
+          s = replace(s, r'(?s)\$\$.*?\$\$', "'?'")
+          replace(s, r'(?s)\$[A-Za-z_][A-Za-z_0-9]*\$.*?\$[A-Za-z_][A-Za-z_0-9]*\$', "'?'")
+        } else { v }
+      }
+      plan = remove!(plan, ["Query Parameters"])
+      ev.plan = plan
+      msg = string!(j.head) + " (plan in .plan)"
+    } else {
+      ev.plan_parse_error = true
+    }
+  }
+  msg = replace(msg, r'(?s)[Ee]\'(?:[^\'\\]|\\.|\'\')*\'', "'?'")
+  msg = replace(msg, r'(?s)\'(?:[^\']|\'\')*\'', "'?'")
+  msg = replace(msg, r'(?s)\$\$.*?\$\$', "'?'")
+  msg = replace(msg, r'(?s)\$[A-Za-z_][A-Za-z_0-9]*\$.*?\$[A-Za-z_][A-Za-z_0-9]*\$', "'?'")
+  ev.message = msg
+  . = ev
+}

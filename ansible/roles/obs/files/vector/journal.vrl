@@ -1,0 +1,17 @@
+# journald (cloudflared, docker, containerd, postgresql unit, telegraf, kernel) -> compact event. Keep the
+# message, unit, priority; drop the rest of the journal metadata. IPv4/IPv6 addresses in messages are truncated
+# to /24 and /48 (cloudflared/kernel lines can carry addresses; nothing here needs the host part).
+msg = string(.message) ?? ""
+msg = replace(msg, r'\b(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}\b', "$1.0")
+msg = replace(msg, r'(?i)\b([0-9a-f]{1,4}:[0-9a-f]{1,4}:[0-9a-f]{1,4}):[0-9a-f:]*[0-9a-f]\b', "$1::")
+unit = string(._SYSTEMD_UNIT) ?? ""
+if unit == "" {
+  unit = if (string(._TRANSPORT) ?? "") == "kernel" { "kernel" } else { string(.SYSLOG_IDENTIFIER) ?? "unknown" }
+}
+. = {
+  "timestamp": .timestamp,
+  "message": msg,
+  "unit": unit,
+  "priority": to_int(.PRIORITY) ?? null,
+  "source": "journald"
+}

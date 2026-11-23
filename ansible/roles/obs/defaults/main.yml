@@ -53,12 +53,23 @@ obs_binaries:
     sha256: 5c00c5234f1ee45900b25539a5a0ab82146a098c15c16a4ec3bc855b597a6477
     path: node_exporter-1.13.1.linux-amd64/node_exporter
     units: [obs-node-fast, obs-node-slow]
+  - name: vector
+    version: 0.62.0
+    url: https://github.com/vectordotdev/vector/releases/download/v0.62.0/vector-0.62.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: e9d9cb3ee12288544c813453d0548524ab2bcc8f7e81b601f5e9d378fa6ac2f6
+    path: vector-x86_64-unknown-linux-gnu/bin/vector
+    units: [obs-vector]
   - name: process-exporter
     version: 0.8.7
     url: https://github.com/ncabatoff/process-exporter/releases/download/v0.8.7/process-exporter-0.8.7.linux-amd64.tar.gz
     sha256: 6d274cca5e94c6a25e55ec05762a472561859ce0a05b984aaedb67dd857ceee2
     path: process-exporter-0.8.7.linux-amd64/process-exporter
     units: [obs-process-exporter]
+
+# Log files Vector reads; read access is a per-user ACL for obs (never group adm). Teardown removes the ACLs.
+obs_log_acls:
+  - {dir: /var/log/postgresql, files: [/var/log/postgresql/postgresql-16-main.log]}
+  - {dir: /var/log/lemdroid-nginx, files: [/var/log/lemdroid-nginx/access.json, /var/log/lemdroid-nginx/access.json.1]}
 
 # systemd units. All run as obs in obs.slice (MemoryHigh 1.25G / MemoryMax 1.5G for the whole slice), plus a
 # per-unit MemoryMax. rw = extra writable paths (ProtectSystem=strict everywhere).
@@ -133,6 +144,15 @@ obs_units:
       - "--collector.uname"
       - "--collector.textfile"
       - "--collector.textfile.directory={{ obs_data }}/textfile"
+  - name: obs-vector
+    bin: vector
+    memory_max: 192M
+    supplementary_groups: [systemd-journal]   # read the journal; NOT adm, NOT docker
+    rw: ["{{ obs_data }}/vector"]
+    env: ["VECTOR_LOG=warn"]
+    args:
+      - "--config {{ obs_etc }}/vector/vector.toml"
+      - "--require-healthy false"
   - name: obs-process-exporter
     bin: process-exporter
     memory_max: 48M

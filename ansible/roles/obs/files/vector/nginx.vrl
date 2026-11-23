@@ -1,0 +1,132 @@
+# nginx obs_json line -> one request event. Runs BEFORE any sink (PLAN §6.3). The full client IP is kept only
+# in .client_ip here; nginx_main deletes it, nginx_ip keeps only {timestamp, request_id, cf_ray, client_ip}.
+. = parse_json!(string!(.message))
+
+# UTC event time from $msec (epoch seconds with ms)
+ms = to_int(to_float!(.msec) * 1000.0)
+.timestamp = from_unix_timestamp!(ms, unit: "milliseconds")
+del(.msec)
+
+.status = to_int(.status) ?? 0
+.bytes = to_int(.bytes) ?? 0
+.request_length = to_int(.request_length) ?? 0
+.request_time = to_float(.request_time) ?? 0.0
+# upstream_* may be "-", empty, or "a, b" (retries) / "a : b" (internal redirect); keep the last attempt
+for_each(["upstream_connect_time", "upstream_header_time", "upstream_response_time", "upstream_status"]) -> |_i, k| {
+  v = string(get!(., [k])) ?? ""
+  parts = split(v, r'\s*[,:]\s*')
+  last = string(parts[-1]) ?? ""
+  if k == "upstream_status" {
+    . = set!(., [k], to_int(last) ?? null)
+  } else {
+    . = set!(., [k], to_float(last) ?? null)
+  }
+}
+for_each(["cf_ray", "cf_country", "upstream", "cache", "sig_host", "ua", "proxpass"]) -> |_i, k| {
+  if get!(., [k]) == "" || get!(., [k]) == "-" { . = remove!(., [k]) }
+}
+
+# ---- path / query split and redaction ----
+uri = string(.request_uri) ?? ""
+del(.request_uri)
+parts = split(uri, "?", limit: 2)
+path = string(parts[0]) ?? ""
+query = string(parts[1]) ?? ""
+# tokens in the path
+path = replace(path, r'^(/(?:password_change|verify_email|password_reset|activate))/[^/]+', "$1/:token")
+# secret-ish query values
+query = replace(query, r'(?i)(^|&)((?:auth|jwt|token|access_token|refresh_token|password|pass|code|secret|key|api_key|sig|signature)=)[^&]*', "$1${2}REDACTED")
+# image proxy: keep only the host of the proxied URL
+um = parse_regex(query, r'(?:^|&)url=(?P<u>[^&]*)') ?? {}
+if exists(um.u) {
+  decoded = decode_percent(string!(um.u))
+  .url_host = parse_url(decoded).host ?? "invalid"
+  query = replace(query, r'(^|&)url=[^&]*', "${1}url=REDACTED")
+}
+.path = truncate(path, 512)
+if query != "" { .args = truncate(query, 512) }
+
+# ---- route normalization (bounded label set) ----
+p = downcase(path)
+route_class = "other"
+route = "other"
+if starts_with(p, "/api/v3/") || p == "/api/v3" {
+  route_class = "api"
+  r = replace(p, r'/\d+(/|$)', "/:id$1")
+  route = if match(r, r'^/api/v3(/[a-z_]+){0,3}(/:id)?$') { r } else { "/api/v3/:other" }
+} else if p == "/inbox" || match(p, r'^/(u|c)/[^/]+/inbox$') {
+  route_class = "inbox"
+  route = if p == "/inbox" { "/inbox" } else { replace(p, r'^/(u|c)/[^/]+/inbox$', "/$1/:name/inbox") }
+} else if starts_with(p, "/pictrs/") {
+  route_class = "pictrs"
+  route = if starts_with(p, "/pictrs/image/") { "/pictrs/image/:file" } else { "/pictrs/:other" }
+} else if starts_with(p, "/api/") {
+  route_class = "api"
+  route = "/api/:other"
+} else if starts_with(p, "/.well-known/") {
+  route_class = "wellknown"
+  route = if match(p, r'^/\.well-known/[a-z0-9_-]+$') { p } else { "/.well-known/:other" }
+} else if starts_with(p, "/nodeinfo") {
+  route_class = "nodeinfo"
+  route = if match(p, r'^/nodeinfo(/2\.[01](\.json)?)?$') { p } else { "/nodeinfo/:other" }
+} else if starts_with(p, "/feeds/") {
+  route_class = "feeds"
+  route = "/feeds/:feed"
+} else if starts_with(p, "/_app/") || match(p, r'\.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|map|json|webmanifest|txt|xml)$') {
+  route_class = "static"
+  route = if starts_with(p, "/_app/immutable/") { "/_app/immutable/*" } else { "/static" }
+} else if p == "/" || p == "" {
+  route_class = "html"
+  route = "/"
+} else if match(p, r'^/(post|comment)/\d+(/\d+)?$') {
+  route_class = "html"
+  route = replace(p, r'^/(post|comment)/\d+(/\d+)?$', "/$1/:id")
+} else if match(p, r'^/(u|c|m)/[^/]+(/.*)?$') {
+  route_class = "html"
+  route = replace(p, r'^/(u|c|m)/[^/]+(/.*)?$', "/$1/:name")
+} else if match(p, r'^/(communities|search|login|signup|settings|inbox|create_post|create_community|modlog|instances|legal|admin|registration_applications|reports|saved|explore|home|about)(/.*)?$') {
+  route_class = "html"
+  route = replace(p, r'^(/[a-z_]+).*$', "$1")
+} else if p == "/nginx_alive_check" {
+  route_class = "health"
+  route = p
+}
+.route_class = route_class
+.route = route
+.status_class = to_string(floor(to_float(.status) / 100.0, precision: 0)) + "xx"
+if .status_class == "0xx" { .status_class = "unknown" }
+
+# ---- user-agent class ----
+ua = downcase(string(.ua) ?? "")
+.ua_class = if ua == "" {
+  "none"
+} else if match(ua, r'lemmy|mastodon|mbin|kbin|piefed|misskey|sharkey|akkoma|pleroma|friendica|gotosocial|peertube|pixelfed|lotide|hubzilla|iceshrimp|firefish|activitypub|bookwyrm|wordpress|writefreely|threads') {
+  "fediverse"
+} else if match(ua, r'early hints') {
+  "cf_early_hints"
+} else if match(ua, r'bot|crawl|spider|slurp|scrapy|curl|wget|python|go-http|java/|okhttp|axios|node-fetch|libwww|httpclient|uptime') {
+  "bot_or_tool"
+} else if match(ua, r'voyager|thunder|jerboa|boost|sync for lemmy|summit|connect for lemmy|eternity|liftoff|avelon|interstellar|mlem|arctic|lemmios|lemmur|racoon|quiblr|tesseract|alexandrite|photon') {
+  "app"
+} else if match(ua, r'mozilla|chrome|safari|firefox|edg/') {
+  "browser"
+} else {
+  "other"
+}
+
+# ---- IP: truncated network for the 30-day store; full IP stays only in .client_ip for nginx_ip ----
+ip = string(.client_ip) ?? ""
+.client_net = if is_ipv4(ip) {
+  (ip_subnet(ip, "/24") ?? "invalid") + "/24"
+} else if is_ipv6(ip) {
+  (ip_subnet(ip, "/48") ?? "invalid") + "/48"
+} else {
+  "invalid"
+}
+
+# Host header is client-controlled: bounded label set
+h = downcase(string(.host) ?? "")
+.host = if includes(["lemdro.id", "l.lemdro.id", "old.lemdro.id"], h) { h } else { "other" }
+
+.source = "nginx"
+.message = (string(.method) ?? "-") + " " + .route + " " + to_string(.status)

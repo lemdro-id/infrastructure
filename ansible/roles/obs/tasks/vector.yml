@@ -1,0 +1,72 @@
+# Vector: nginx JSON access log, Postgres log, journald -> redaction -> VictoriaLogs (30 d, no full IPs),
+# vl-ip (14 d, full IPs + join keys only) and VictoriaMetrics (log->metric, nginx stub_status, Vector self).
+- name: Vector config, VRL programs and unit tests
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ obs_etc }}/vector/{{ item.dest }}"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  loop:
+    - {src: vector/vector.toml, dest: vector.toml}
+    - {src: vector/nginx.vrl, dest: nginx.vrl}
+    - {src: vector/pg.vrl, dest: pg.vrl}
+    - {src: vector/journal.vrl, dest: journal.vrl}
+    - {src: vector-tests/tests.toml, dest: tests.toml}
+  loop_control: {label: "{{ item.dest }}"}
+  register: obs_cfg_vector
+
+- name: vector validate + vector test (redaction fixtures must pass before Vector (re)starts)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ obs_root }}/bin/vector validate --no-environment {{ obs_etc }}/vector/vector.toml
+    {{ obs_root }}/bin/vector test {{ obs_etc }}/vector/vector.toml {{ obs_etc }}/vector/tests.toml
+  args:
+    executable: /bin/bash
+  become_user: "{{ obs_user }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - obs_cfg_vector is changed or (obs_links.results | selectattr('changed') | selectattr('item.name', 'equalto', 'vector') | list | length > 0)
+
+# File ACLs: obs may read exactly these logs. Not group adm (PLAN C5b-5). copytruncate (Postgres) keeps the inode,
+# so the file ACL survives rotation; the default ACL covers files created later (nginx reopen).
+- name: Log paths present? (read-only)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ obs_log_acls | map(attribute='dir') | list + obs_log_acls | map(attribute='files') | flatten }}"
+  register: obs_log_paths
+
+- name: obs may traverse/list the log directories
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    permissions: rx
+    state: present
+  loop: "{{ obs_log_paths.results | selectattr('stat.exists') | selectattr('stat.isdir') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+  when: not (ansible_check_mode and (obs_acl_pkg is changed or obs_user_task is changed))
+
+- name: Default ACL so new files in those directories are readable by obs
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    permissions: r
+    default: true
+    state: present
+  loop: "{{ obs_log_paths.results | selectattr('stat.exists') | selectattr('stat.isdir') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+  when: not (ansible_check_mode and (obs_acl_pkg is changed or obs_user_task is changed))
+
+- name: Existing log files readable by obs
+  ansible.posix.acl:
+    path: "{{ item.item }}"
+    entity: "{{ obs_user }}"
+    etype: user
+    permissions: r
+    state: present
+  loop: "{{ obs_log_paths.results | selectattr('stat.exists') | rejectattr('stat.isdir') | list }}"
+  loop_control: {label: "{{ item.item }}"}
+  when: not (ansible_check_mode and (obs_acl_pkg is changed or obs_user_task is changed))

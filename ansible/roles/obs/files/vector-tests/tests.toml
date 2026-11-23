@@ -1,0 +1,251 @@
+# vector test /etc/obs/vector/vector.toml tests.toml  (run by the role before (re)starting Vector, and in CI)
+
+# ---------- nginx ----------
+[[tests]]
+name = "nginx: inbox POST, sig_host, IP split, UTC time"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.103","request_id":"dbfd6d51","cf_ray":"8abc123-IAD","cf_country":"DE","client_ip":"203.0.113.77","host":"lemdro.id","method":"POST","request_uri":"/inbox","proto":"HTTP/1.1","status":"202","bytes":"0","request_length":"2910","request_time":"0.031","upstream":"127.0.0.1:8080","upstream_status":"202","upstream_connect_time":"0.000","upstream_header_time":"0.030","upstream_response_time":"0.030","proxpass":"lemmy","cache":"","ua":"Lemmy/0.19.21; +https://lemmy.world","sig_host":"lemmy.world","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.route_class, "inbox")
+assert_eq!(.route, "/inbox")
+assert_eq!(.sig_host, "lemmy.world")
+assert_eq!(.ua_class, "fediverse")
+assert_eq!(.client_net, "203.0.113.0/24")
+assert!(!exists(.client_ip))
+assert_eq!(.status, 202)
+assert_eq!(.upstream_header_time, 0.03)
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-11-23T15:05:07.103+00:00")
+assert!(!contains(encode_json(.), "203.0.113.77"))
+'''
+[[tests.outputs]]
+extract_from = "nginx_ip"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_ip, "203.0.113.77")
+assert_eq!(.request_id, "dbfd6d51")
+assert_eq!(keys(.), ["cf_ray", "client_ip", "message", "request_id", "source", "timestamp"])
+'''
+
+[[tests]]
+name = "nginx: secrets in path and query are redacted, IPv6 /48, image proxy host only"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.111","request_id":"r2","cf_ray":"","cf_country":"","client_ip":"2001:db8:1234:5678::1","host":"lemdro.id","method":"GET","request_uri":"/api/v3/image_proxy?url=https%3A%2F%2Fcdn.example.org%2Fa%2Fsecret.png%3Fsig%3Dabc&auth=JWTXYZ&token=SEKRET&limit=50","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"173","request_time":"0.100","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.090","upstream_response_time":"0.100","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "JWTXYZ"))
+assert!(!contains(j, "SEKRET"))
+assert!(!contains(j, "secret.png"))
+assert!(!contains(j, "2001:db8:1234:5678::1"))
+assert_eq!(.url_host, "cdn.example.org")
+assert_eq!(.client_net, "2001:db8:1234::/48")
+assert_eq!(.route, "/api/v3/image_proxy")
+assert_eq!(.ua_class, "browser")
+assert!(contains(string!(.args), "limit=50"))
+assert!(!exists(.sig_host))
+'''
+
+[[tests]]
+name = "nginx: password reset token in path, unknown Host header bounded, numeric ids normalized"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446308.000","request_id":"r3","cf_ray":"x","cf_country":"US","client_ip":"198.51.100.9","host":"EVIL.example","method":"GET","request_uri":"/password_change/AbCdEf123token","proto":"HTTP/1.1","status":"404","bytes":"1","request_length":"1","request_time":"0.001","upstream":"-","upstream_status":"-","upstream_connect_time":"-","upstream_header_time":"-","upstream_response_time":"-","proxpass":"photon-ui","cache":"","ua":"","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446308.500","request_id":"r4","cf_ray":"y","cf_country":"US","client_ip":"198.51.100.10","host":"l.lemdro.id","method":"GET","request_uri":"/post/123456/7890","proto":"HTTP/1.1","status":"200","bytes":"1","request_length":"1","request_time":"0.2","upstream":"127.0.0.1:1234","upstream_status":"502, 200","upstream_connect_time":"0.001, 0.002","upstream_header_time":"-, 0.19","upstream_response_time":"0.01, 0.2","proxpass":"photon-ui","cache":"","ua":"Voyager/2.30","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+if .request_id == "r3" {
+  assert_eq!(.path, "/password_change/:token")
+  assert_eq!(.host, "other")
+  assert_eq!(.ua_class, "none")
+  assert!(!contains(encode_json(.), "AbCdEf123token"))
+  assert_eq!(.upstream_status, null)
+} else {
+  assert_eq!(.route, "/post/:id")
+  assert_eq!(.route_class, "html")
+  assert_eq!(.ua_class, "app")
+  assert_eq!(.upstream_status, 200)
+  assert_eq!(.upstream_header_time, 0.19)
+}
+'''
+
+# ---------- postgres (PLAN §6.4 fixtures) ----------
+[[tests]]
+name = "pg: EST slow statement -> UTC, user/db parsed, no qid, literal scrubbed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 2500.1 ms  statement: SELECT * FROM person WHERE name = 'alice' AND id = 5"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-11-23T09:54:12.154+00:00")
+assert_eq!(.user, "lemmy")
+assert_eq!(.db, "lemmy")
+assert!(!exists(.qid))
+assert_eq!(.kind, "slow_statement")
+assert_eq!(.duration_ms, 2500.1)
+assert!(!contains(string!(.message), "alice"))
+assert!(contains(string!(.message), "name = '?' AND id = 5"))
+'''
+
+[[tests]]
+name = "pg: EDT -> UTC"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-07-01 10:00:00.000 EDT [9] LOG:  checkpoint starting: time"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(format_timestamp!(.timestamp, "%+"), "2026-07-01T14:00:00+00:00")
+assert_eq!(.kind, "checkpoint")
+assert!(!exists(.user))
+'''
+
+[[tests]]
+name = "pg: qid parsed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy qid=-123456789 LOG:  duration: 3000.0 ms  execute <unnamed>: SELECT 1"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.qid, "-123456789")
+assert_eq!(.kind, "slow_statement")
+'''
+
+[[tests]]
+name = "pg: multi-line STATEMENT is one event with full text"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 2100.0 ms  statement: SELECT c.id\n\tFROM comment c\n\tWHERE c.content = 'hello world'\n\tLIMIT 10"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+m = string!(.message)
+assert!(contains(m, "FROM comment c"))
+assert!(contains(m, "LIMIT 10"))
+assert!(!contains(m, "hello world"))
+'''
+
+[[tests]]
+name = "pg: auto_explain JSON plan, literals scrubbed incl. E'' strings, Query Parameters removed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [1347] lemmy@lemmy LOG:  duration: 1500.0 ms  plan:\n{\n  \"Query Text\": \"SELECT * FROM local_user WHERE email = 'a@b.c'\",\n  \"Query Parameters\": \"$1 = 'p@q.r'\",\n  \"Plan\": {\n    \"Node Type\": \"Index Scan\",\n    \"Index Cond\": \"(email = 'a@b.c'::text)\",\n    \"Filter\": \"(name = E'x\\\\'y')\"\n  }\n}"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert_eq!(.kind, "auto_explain")
+assert!(!contains(j, "a@b.c"))
+assert!(!contains(j, "p@q.r"))
+assert!(!contains(j, "x\\'y"))
+assert_eq!(.plan.Plan."Index Cond", "(email = '?'::text)")
+assert_eq!(.plan.Plan.Filter, "(name = '?')")
+assert!(!exists(.plan."Query Parameters"))
+'''
+
+[[tests]]
+name = "pg: DETAIL parameters record dropped; embedded parameters tail stripped"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.155 EST [1347] lemmy@lemmy DETAIL:  parameters: $1 = 'secret@example.org'"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.156 EST [1347] lemmy@lemmy LOG:  duration: 2200.0 ms  execute <unnamed>: SELECT 1 WHERE x = $1\n2026-11-23 04:54:12.156 EST [1347] lemmy@lemmy DETAIL:  parameters: $1 = 'secret@example.org'\n  more"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(encode_json(.), "secret@example.org"))
+assert_eq!(.kind, "slow_statement")
+'''
+
+[[tests]]
+name = "pg: autovacuum table parsed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 EST [77] LOG:  automatic vacuum of table \"lemmy.public.comment_aggregates\": index scans: 1"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.kind, "autovacuum")
+assert_eq!(.table, "lemmy.public.comment_aggregates")
+'''
+
+[[tests]]
+name = "pg: unknown zone flagged, never guessed"
+[[tests.inputs]]
+insert_at = "pg_parse"
+type = "log"
+log_fields.message = "2026-11-23 04:54:12.154 XYZ [77] LOG:  checkpoint complete"
+[[tests.outputs]]
+extract_from = "pg_parse"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.ts_parse_error, true)
+'''
+
+# ---------- journald ----------
+[[tests]]
+name = "journald: IPs truncated, metadata dropped"
+[[tests.inputs]]
+insert_at = "journal_shape"
+type = "log"
+log_fields.message = "ERR Request failed error=\"x\" connIndex=1 ip=198.41.200.13 client=2001:db8:aa:bb:cc::1"
+log_fields._SYSTEMD_UNIT = "cloudflared-lemdroid.service"
+log_fields.PRIORITY = "3"
+log_fields._CMDLINE = "/usr/bin/cloudflared tunnel run --token SHOULD_NOT_SHIP"
+[[tests.outputs]]
+extract_from = "journal_shape"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+j = encode_json(.)
+assert!(!contains(j, "198.41.200.13"))
+assert!(contains(j, "198.41.200.0"))
+assert!(!contains(j, "SHOULD_NOT_SHIP"))
+assert!(!contains(j, "aa:bb:cc::1"))
+assert_eq!(.unit, "cloudflared-lemdroid.service")
+assert_eq!(.priority, 3)
+'''
