@@ -50,22 +50,19 @@ obs-vmauth (same allowlist), with a dedicated no-shell tunnel user.
   `lemdroid-vl` (VictoriaLogs plugin 0.34.0 → gateway). VM/VL datasources and their dashboards are only installed
   when both gateway tokens are set.
 - Dashboards (folder `lemdro.id`, `allowUiUpdates: false`): Interactions, Health, Error logs, Maps.
-- Cole-only: systemd drop-in env (grafana.ini untouched) — anonymous off, sign-up off, org creation off, public
-  dashboards off, local snapshots off (`GF_SNAPSHOTS_ENABLED=false`; a snapshot URL is viewable without login),
-  external snapshots off, Gravatar off. Folder permission set to Admin only through the API.
-  OSS Grafana cannot restrict datasources per user, so org membership is the gate. When the admin token is set,
-  the play **asserts** (it does not warn) that every org login is in `grafana_lemdroid_allowed_logins`, except
-  logins matching `^sa-` (Grafana service accounts). An empty list does not skip the check: any other member
-  fails the play. Cole's Grafana username is not in this repo, so the default list is empty. Set it in
-  `group_vars/grafana_home/vars.yml`. That list must be non-empty when `obs_grafana_access_enabled` is true
-  (the assert reads the flag from `group_vars/lemdroid`, or from `-e` on `grafana.yml`, and runs before the API call).
+- Access, by owner decision: **any logged-in Grafana user** may view the lemdro.id dashboards. The play sets
+  folder permission View (`1`) on the Viewer and Editor org roles. Organization admins always have access.
+  There is no per-login allowlist. Anonymous access stays off, so a login is required. Sign-up, org creation,
+  public dashboards, local snapshots (`GF_SNAPSHOTS_ENABLED=false`; a snapshot URL is viewable without login),
+  external snapshots, and Gravatar stay off (systemd drop-in; grafana.ini untouched).
 
 ### Finding: Grafana is reachable from the internet
 
-`grafana.corvettecole.com` answers from the public internet (Grafana 13.3.0 login page through Nginx Proxy Manager),
-although the home docs describe it as LAN/tailnet-only. Anonymous access is already off. Recommended (needs Cole's
-OK; NPM via its UI/API only): an NPM access list on that proxy host (LAN + tailnet ranges), or drop the public host.
-Until then, the login page is the only barrier in front of the lemdro.id dashboards.
+`grafana.corvettecole.com` is reachable from the public internet (Grafana 13.3.0 login page through Nginx Proxy
+Manager), although the home docs describe it as LAN/tailnet-only. Anonymous access is off, so a Grafana login is
+required, and by owner decision any such login may view the lemdro.id dashboards. An NPM access list on that
+proxy host (LAN + tailnet ranges), or removing the public host, is recommended (NPM via its UI/API only). Until
+then, the login page is the only barrier in front of those dashboards.
 
 ## Needs Cole's OK (none of this is done)
 
@@ -77,8 +74,7 @@ Until then, the login page is the only barrier in front of the lemdro.id dashboa
    (Grafana service account, Admin).
 3. Ansible SSH access to CT 102 for `grafana.yml` (not set up today), or apply the role by hand.
 4. NPM access list for `grafana.corvettecole.com` (above).
-5. Setting `grafana_lemdroid_allowed_logins` in `group_vars/grafana_home` (Cole's Grafana login; required before
-   the gateway flag), then `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid`.
+5. Setting `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid`.
 
 ## Outbound from lemdroid-ovh (only when `obs_geoip_enabled`)
 

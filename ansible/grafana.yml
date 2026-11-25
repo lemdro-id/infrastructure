@@ -1,4 +1,5 @@
-# lemdro.id Grafana (obs plan P2) on CT 102 grafana-influx: datasources, dashboards, Cole-only hardening.
+# lemdro.id Grafana (obs plan P2) on CT 102 grafana-influx: datasources, dashboards, login-required hardening.
+# Any logged-in Grafana user may view the folder (owner decision). Anonymous access stays off.
 # Touches Grafana only (provisioning files, one systemd drop-in, one plugin); restarts grafana-server only.
 # Influx, Telegraf and everything else on CT 102 are left alone. See ../docs/grafana-access.md.
 #

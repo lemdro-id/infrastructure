@@ -15,20 +15,6 @@
     fail_msg: "Grafana < {{ grafana_lemdroid_min_version }} or vault_grafana_influx_read_token missing"
     quiet: true
 
-# hostvars so a flag set in group_vars/lemdroid is visible from this play (grafana_home). -e on grafana.yml wins.
-- name: Allowed logins are set before the OVH read gateway is enabled
-  ansible.builtin.assert:
-    that:
-      - grafana_lemdroid_allowed_logins | length > 0
-    fail_msg: >-
-      obs_grafana_access_enabled is true, but grafana_lemdroid_allowed_logins is empty.
-      Set it in group_vars/grafana_home/vars.yml to every Grafana org login that may exist
-      (Cole's login; this repo does not record it). OSS Grafana cannot restrict datasources
-      per user, so any other org member could query them. Service accounts (sa-*) are not counted.
-    quiet: true
-  when: >-
-    (obs_grafana_access_enabled | default(hostvars['lemdroid-ovh'].obs_grafana_access_enabled | default(false))) | bool
-
 - name: VictoriaLogs datasource plugin (pinned, signed)
   ansible.builtin.command: >-
     grafana cli --homepath /usr/share/grafana plugins install
@@ -120,7 +106,7 @@
 - name: Apply restarts now (the API checks below need the new config)
   ansible.builtin.meta: flush_handlers
 
-# ---- Cole-only: folder permissions + org membership (HTTP API on 127.0.0.1, admin service account from vault) ----
+# ---- Login required: anonymous stays off; any logged-in org member may view (owner decision) ----
 - name: Grafana API checks
   when: not ansible_check_mode and grafana_lemdroid_admin_token | length > 0
   block:
@@ -137,33 +123,18 @@
         url: "{{ grafana_lemdroid_api_url }}/api/search"
         status_code: 401
 
-    - name: Org users (read-only)
-      ansible.builtin.uri:
-        url: "{{ grafana_lemdroid_api_url }}/api/org/users"
-        headers: {Authorization: "Bearer {{ grafana_lemdroid_admin_token }}"}
-      register: grafana_lemdroid_users
-      no_log: true
-
-    - name: Only the allowed logins are org members (OSS can't restrict datasources per user)
-      ansible.builtin.assert:
-        that: grafana_lemdroid_extra_users | length == 0
-        fail_msg: >-
-          Grafana org has logins outside grafana_lemdroid_allowed_logins
-          (service accounts matching ^sa- are ignored; an empty list does not skip this check):
-          {{ grafana_lemdroid_extra_users }}. Set the list in group_vars/grafana_home/vars.yml.
-        quiet: true
-      vars:
-        grafana_lemdroid_extra_users: >-
-          {{ grafana_lemdroid_users.json | map(attribute='login') | reject('in', grafana_lemdroid_allowed_logins)
-             | reject('match', '^sa-') | list }}
-
-    - name: lemdro.id folder visible to Admins only (removes the default Viewer/Editor grants)
+    # permission 1 = View. Viewer and Editor both get it so every login can open the folder.
+    # Organization admins always can (Grafana does not let a folder permission remove that).
+    - name: Folder is viewable by any logged-in org member
       ansible.builtin.uri:
         url: "{{ grafana_lemdroid_api_url }}/api/folders/{{ grafana_lemdroid_folder_uid }}/permissions"
         method: POST
         headers: {Authorization: "Bearer {{ grafana_lemdroid_admin_token }}"}
         body_format: json
-        body: {items: [{role: Admin, permission: 4}]}
+        body:
+          items:
+            - {role: Viewer, permission: 1}
+            - {role: Editor, permission: 1}
       register: grafana_lemdroid_perm
       until: grafana_lemdroid_perm.status == 200
       retries: 10
