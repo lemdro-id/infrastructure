@@ -2,6 +2,10 @@
 # Sinks are all on 127.0.0.1. No Vector API listener. Timestamps: UTC.
 data_dir = "/var/lib/obs/vector"
 timezone = "UTC"
+# Drop internal metric series not updated for 15 min (default: kept forever). Bounds the internal_metrics
+# registry, which otherwise keeps every component/label series ever seen. Counters that come back restart at 0,
+# which VictoriaMetrics' increase()/rate() handle as a reset.
+expire_metrics_secs = 900
 
 [api]
 enabled = false
