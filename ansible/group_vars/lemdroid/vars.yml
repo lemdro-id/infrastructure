@@ -82,3 +82,5 @@ photon_build_archive: ""
 obs_grafana_access_enabled: true
 obs_geoip_enabled: true
 obs_geoip_asn_enabled: true   # DB-IP ASN Lite: geo_asn, geo_asn_org, geo_hosting (Maps "Hide datacenters")
+# jemalloc tuning for obs-vector (Vector reads plain MALLOC_CONF); empty string disables. See PR #59.
+obs_vector_malloc_conf: "background_thread:true,dirty_decay_ms:1000"
