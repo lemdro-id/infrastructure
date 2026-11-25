@@ -81,3 +81,4 @@ photon_build_archive: ""
 # tailscale_ip:8427, nft-pinned to telegraf_influx_ip) and offline DB-IP GeoIP for the maps.
 obs_grafana_access_enabled: true
 obs_geoip_enabled: true
+obs_geoip_asn_enabled: true   # DB-IP ASN Lite: geo_asn, geo_asn_org, geo_hosting (Maps "Hide datacenters")
