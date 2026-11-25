@@ -88,7 +88,7 @@
 - name: Stable binary paths
   ansible.builtin.file:
     src: "{{ obs_root }}/{{ item.name }}-{{ item.version }}/{{ item.path }}"
-    dest: "{{ obs_root }}/bin/{{ item.name }}"
+    dest: "{{ obs_root }}/bin/{{ item.link | default(item.name) }}"
     state: link
     force: "{{ ansible_check_mode }}"
     owner: root

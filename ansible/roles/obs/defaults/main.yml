@@ -80,6 +80,7 @@ obs_binaries:
     url: https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.157.0/vmutils-linux-amd64-v1.157.0.tar.gz
     sha256: f797ecaa5045a8f8095a813a3b3e2ef697e4086affcc174547cf559768044862
     path: vmauth-prod
+    link: vmauth          # /opt/obs/bin/vmauth (obs_vmauth_unit.bin); the archive is vmutils, the binary is vmauth
     units: "{{ ['obs-vmauth'] if obs_grafana_access_enabled else [] }}"
   - name: sql_exporter
     version: 0.24.14

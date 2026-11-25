@@ -76,3 +76,8 @@ postgres_databases:
 # Build with scripts/build-photon.sh on any machine with Docker; pass the resulting tarball path.
 photon_version: v2.4.3
 photon_build_archive: ""
+
+# obs P2 (docs/grafana-access.md), enabled 2026-11-24 with Cole's OK: read-only Grafana gateway (obs-vmauth on
+# tailscale_ip:8427, nft-pinned to telegraf_influx_ip) and offline DB-IP GeoIP for the maps.
+obs_grafana_access_enabled: true
+obs_geoip_enabled: true

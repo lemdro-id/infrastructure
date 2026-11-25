@@ -23,6 +23,18 @@
     creates: "/var/lib/grafana/plugins/{{ grafana_lemdroid_vl_plugin }}/plugin.json"
   notify: Restart grafana-server
 
+# grafana cli runs as root and leaves the plugin dir root:root 0700; Grafana (user grafana) then can't scan it.
+- name: VictoriaLogs plugin owned by grafana
+  ansible.builtin.file:
+    path: "/var/lib/grafana/plugins/{{ grafana_lemdroid_vl_plugin }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+    recurse: true
+  notify: Restart grafana-server
+  when: not ansible_check_mode
+
 - name: VictoriaLogs plugin version matches the pin (read-only)
   ansible.builtin.slurp:
     src: "/var/lib/grafana/plugins/{{ grafana_lemdroid_vl_plugin }}/plugin.json"
