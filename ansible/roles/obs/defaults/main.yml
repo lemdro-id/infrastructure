@@ -94,6 +94,11 @@ obs_log_acls:
   - {dir: /var/log/postgresql, files: [/var/log/postgresql/postgresql-16-main.log]}
   - {dir: /var/log/lemdroid-nginx, files: [/var/log/lemdroid-nginx/access.json, /var/log/lemdroid-nginx/access.json.1]}
 
+# Vector allocation tracing (diagnostics, off by default). On: vector runs with --allocation-tracing, so
+# internal_metrics exports vector_component_allocated_bytes / _allocated_bytes_total / _deallocated_bytes_total
+# per component (to VictoriaMetrics with the rest of vector_self). Small CPU/heap overhead; one restart to switch.
+obs_vector_allocation_tracing: false
+
 # systemd units. All run as obs in obs.slice. Slice MemoryHigh/MemoryMax (templates/obs.slice.j2):
 #   GeoIP off:                         1344M / 1600M  (vector 256M; per-unit sum 1232M, or 1296M with vmauth)
 #   GeoIP on, ASN off:                 1664M / 1920M  (vector 512M)
@@ -181,7 +186,7 @@ obs_units:
     # GeoIP+ASN: DB-IP ASN Lite (2026-11) is 9,648,279 bytes (9.20 MiB). Vector 0.62 loads an mmdb with
     #   maxminddb Reader::open_readfile (the file bytes in a Vec, not mmap). A reload holds both copies,
     #   ~18.4 MiB. +32M covers that without sitting on the cap again: 544M, and the slice moves with it.
-    #   Live (2026-11-25): 238M two minutes after a restart, 468M current / 479M peak three hours later
+    #   Live (2026-11-25): 238M two minutes after a restart, 468M current / 479M peak 1h16m later (11:29 PM to 12:45 AM PT)
     #   (about 315M anon + 160M page cache), so 544M had little room. Raised to 640M; slice +96M keeps 112M slack.
     memory_max: "{{ '640M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('512M' if obs_geoip_enabled else '256M') }}"
     supplementary_groups: [systemd-journal]   # read the journal; NOT adm, NOT docker
@@ -192,6 +197,8 @@ obs_units:
       - "--config {{ obs_etc }}/vector/vector.toml"
       - "--config {{ obs_etc }}/vector/nginx-out.toml"
       - "--require-healthy false"
+      # Opt-in diagnostics: per-component heap (vector_component_allocated_bytes via internal_metrics -> vm).
+      - "{{ '--allocation-tracing' if obs_vector_allocation_tracing else '' }}"
   - name: obs-process-exporter
     bin: process-exporter
     memory_max: 48M
