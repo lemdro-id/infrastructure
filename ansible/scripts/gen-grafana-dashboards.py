@@ -9,6 +9,7 @@ Metric and field names are the ones that exist on lemdroid-ovh (listed read-only
 """
 import json
 import os
+import re
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "roles", "grafana_lemdroid", "files", "dashboards")
 INFLUX = {"type": "influxdb", "uid": "lemdroid-influx"}
@@ -55,8 +56,19 @@ def t_flux(q, ref="A"):
     return {"refId": ref, "datasource": INFLUX, "query": q}
 
 
+# Vector's prometheus_remote_write only sends a lemdroid_* series when it gets an event, so rare series are sparse.
+# VictoriaMetrics rate() with no earlier sample in the window divides by the span between the samples inside it
+# (e.g. 3 s), which turned one 240-request burst into ~78/s for 5 min (2026-11-25 07:12 PT). increase(X[W]) / W
+# divides by the window instead (MetricsQL accepts a duration as a number). Exporter-scraped metrics keep rate().
+_SPARSE_RATE = re.compile(r'(?<![a-z_])rate\((lemdroid_[a-z_]+(?:\{(?:[^{}"]|"[^"]*")*\})?)\[([^\]]+)\]\)')
+
+
+def sparse_rate(expr):
+    return _SPARSE_RATE.sub(lambda m: f"(increase({m.group(1)}[{m.group(2)}]) / {m.group(2)})", expr)
+
+
 def t_prom(expr, legend="", ref="A", instant=False, fmt="time_series"):
-    t = {"refId": ref, "datasource": VM, "expr": expr, "legendFormat": legend or "__auto", "range": not instant,
+    t = {"refId": ref, "datasource": VM, "expr": sparse_rate(expr), "legendFormat": legend or "__auto", "range": not instant,
          "instant": instant, "format": fmt, "editorMode": "code"}
     return t
 
