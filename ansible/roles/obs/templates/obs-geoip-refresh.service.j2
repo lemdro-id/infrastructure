@@ -17,6 +17,10 @@ TimeoutStartSec=20min
 Environment=TZ=UTC
 Environment=OBS_GEOIP_DIR={{ obs_geoip_dir }}
 Environment=OBS_GEOIP_URL_TEMPLATE={{ obs_geoip_url_template }}
+{% if obs_geoip_asn_enabled %}
+Environment=OBS_GEOIP_ASN_URL_TEMPLATE={{ obs_geoip_asn_url_template }}
+Environment=OBS_GEOIP_ASN_SELFTEST={{ obs_etc }}/geoip/selftest-asn.toml
+{% endif %}
 Environment=OBS_GEOIP_CF_LIST={{ obs_etc }}/geoip/cloudflare-ips.txt
 Environment=OBS_GEOIP_SELFTEST={{ obs_etc }}/geoip/selftest.toml
 Environment=OBS_VECTOR_BIN={{ obs_root }}/bin/vector

@@ -1,0 +1,13 @@
+# ASN enrichment off (obs_geoip_enabled, obs_geoip_asn_enabled=false). Runs AFTER Vector was restarted onto
+# the GeoIP config that does not reference the ASN database, so the file is never removed under a Vector that
+# still opens it. The City database, timer and service stay.
+- name: ASN files absent (City GeoIP kept)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ obs_geoip_asn_db }}"
+    - "{{ obs_geoip_asn_db }}.prev"
+    - "{{ obs_geoip_dir }}/asn-state.json"
+    - "{{ obs_etc }}/geoip/hosting-asns.txt"
+    - "{{ obs_etc }}/geoip/selftest-asn.toml"

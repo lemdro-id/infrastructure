@@ -54,13 +54,23 @@
     group: "{{ obs_user }}"
     mode: "0640"
   register: obs_cfg_vector_geo_tests
-  when: obs_geoip_enabled
+  when: obs_geoip_enabled and not obs_geoip_asn_enabled
+
+- name: GeoIP+ASN unit tests as tests-out.toml
+  ansible.builtin.copy:
+    src: vector-tests/tests-geo-asn.toml
+    dest: "{{ obs_etc }}/vector/tests-out.toml"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_vector_geo_asn_tests
+  when: obs_geoip_enabled and obs_geoip_asn_enabled
 
 - name: Vector config changed? (any of the files above)
   ansible.builtin.set_fact:
     obs_cfg_vector:
       changed: "{{ obs_cfg_vector_main is changed or obs_cfg_vector_plain is changed or obs_cfg_vector_geo is changed
-                   or obs_cfg_vector_geo_tests is changed }}"
+                   or obs_cfg_vector_geo_tests is changed or obs_cfg_vector_geo_asn_tests is changed }}"
 
 - name: vector validate + vector test (redaction fixtures must pass before Vector (re)starts)
   ansible.builtin.shell: |

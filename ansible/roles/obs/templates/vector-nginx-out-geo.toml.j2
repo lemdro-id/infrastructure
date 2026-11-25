@@ -42,3 +42,11 @@ endpoint = "http://127.0.0.1:{{ obs_ports.victoriametrics }}/api/v1/write"
 healthcheck.enabled = false
 default_namespace = "vector"
 batch.timeout_secs = 5
+{% if obs_geoip_asn_enabled %}
+
+# DB-IP "IP to ASN Lite" (CC BY 4.0, "IP Geolocation by DB-IP", https://db-ip.com).
+# Same lookup key as the city table: the truncated client_net, never the full IP.
+[enrichment_tables.geoip_asn]
+type = "mmdb"
+path = "{{ obs_geoip_asn_db }}"
+{% endif %}

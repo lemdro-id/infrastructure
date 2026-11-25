@@ -5,7 +5,7 @@
     "lemdro.id",
     "maps"
   ],
-  "description": "Offline GeoIP of the truncated client network (/24, /48) only, done in Vector on lemdroid-ovh with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+  "description": "Offline GeoIP of the truncated client network (/24, /48) only, done in Vector on lemdroid-ovh with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0). Datacenter tagging uses DB-IP Lite ASN, CC BY 4.0, same attribution.",
   "editable": false,
   "graphTooltip": 1,
   "schemaVersion": 41,
@@ -80,6 +80,33 @@
           }
         ],
         "description": "User-agent class (federation servers are on the federation map, not here)."
+      },
+      {
+        "type": "custom",
+        "name": "hide_datacenters",
+        "label": "Hide datacenters",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "query": "on : -geo_hosting:true,off : *",
+        "current": {
+          "text": "on",
+          "value": "-geo_hosting:true",
+          "selected": true
+        },
+        "options": [
+          {
+            "text": "on",
+            "value": "-geo_hosting:true",
+            "selected": true
+          },
+          {
+            "text": "off",
+            "value": "*",
+            "selected": false
+          }
+        ],
+        "description": "On drops visitor rows with geo_hosting true (datacenter/cloud ASN). A row with no geo_hosting field, logged before ASN enrichment, still shows. Federation panels are not filtered."
       }
     ]
   },
@@ -100,7 +127,7 @@
     {
       "type": "geomap",
       "title": "Visitors by country (circle size = requests)",
-      "description": "Excludes federation (inbox), health checks and Cloudflare-egress networks (WARP/Workers). Tooltip shows distinct /24 (or /48) networks too. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+      "description": "Excludes federation (inbox), health checks and Cloudflare-egress networks (WARP/Workers). Hide datacenters (default on) also drops geo_hosting true; a row with no geo_hosting field still shows. Tooltip shows distinct /24 (or /48) networks too. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "lemdroid-vl"
@@ -112,7 +139,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks",
+          "expr": "source:nginx ${hide_datacenters} ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -247,7 +274,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_lat:* | stats by (geo_country, geo_city, geo_lat, geo_lon) count() requests | sort by (requests desc) | limit 1000",
+          "expr": "source:nginx ${hide_datacenters} ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_lat:* | stats by (geo_country, geo_city, geo_lat, geo_lon) count() requests | sort by (requests desc) | limit 1000",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -398,7 +425,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 40",
+          "expr": "source:nginx ${hide_datacenters} ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 40",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -476,7 +503,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_city:* | stats by (geo_country, geo_region, geo_city) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 50",
+          "expr": "source:nginx ${hide_datacenters} ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_city:* | stats by (geo_country, geo_region, geo_city) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 50",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -544,7 +571,7 @@
     {
       "type": "timeseries",
       "title": "Requests/s by country (top 10, all nginx traffic)",
-      "description": "VictoriaMetrics lemdroid_nginx_requests_by_geo_total is labeled only by geo_country and ua_class. This panel counts every request in the selected user-agent classes, including federation inbox, health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ.",
+      "description": "VictoriaMetrics lemdroid_nginx_requests_by_geo_total is labeled only by geo_country and ua_class. This panel counts every request in the selected user-agent classes, including federation inbox, health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ. Hide datacenters does not apply: this counter has no geo_hosting label, so datacenter networks stay in the rate.",
       "datasource": {
         "type": "prometheus",
         "uid": "lemdroid-vm"
@@ -988,7 +1015,7 @@
       "title": "",
       "options": {
         "mode": "markdown",
-        "content": "Geolocation is approximate (city at best, often only country) and comes from an offline database on lemdroid-ovh; no lookup service is ever called. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0). Basemap tiles are loaded by your browser from the Grafana default tile provider."
+        "content": "Geolocation is approximate (city at best, often only country) and comes from an offline database on lemdroid-ovh; no lookup service is ever called. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0). Datacenter tagging uses DB-IP Lite ASN, CC BY 4.0, same attribution. Basemap tiles are loaded by your browser from the Grafana default tile provider."
       },
       "id": 12,
       "gridPos": {

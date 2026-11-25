@@ -8,6 +8,13 @@
     fail_msg: "obs_ports has a clash or obs_bind is not 127.0.0.1"
     quiet: true
 
+- name: ASN enrichment requires GeoIP
+  ansible.builtin.assert:
+    that:
+      - not obs_geoip_asn_enabled or obs_geoip_enabled
+    fail_msg: "obs_geoip_asn_enabled requires obs_geoip_enabled"
+    quiet: true
+
 - name: Present
   ansible.builtin.include_tasks: present.yml
   when: obs_state == 'present'

@@ -1,0 +1,57 @@
+# obs-geoip-refresh self-test for the ASN candidate. Same Vector binary and lookup shape as production
+# (table "geoip_asn", key {"ip": addr}). The script runs `vector test` on a temp copy with @CANDIDATE@
+# replaced by the candidate's path. 8.8.8.0 is Google AS15169 in DB-IP ASN Lite (checked 2026-11).
+[enrichment_tables.geoip_asn]
+type = "mmdb"
+path = "@CANDIDATE@"
+
+[sources.none]
+type = "demo_logs"
+format = "shuffle"
+lines = ["x"]
+count = 1
+
+[transforms.lookup]
+type = "remap"
+inputs = ["none"]
+source = '''
+rec, err = get_enrichment_table_record("geoip_asn", {"ip": string!(.addr)})
+if err == null {
+  .asn = to_int!(rec.autonomous_system_number)
+  .org = string!(rec.autonomous_system_organization)
+}
+'''
+
+[sinks.none]
+type = "blackhole"
+inputs = ["lookup"]
+
+[[tests]]
+name = "candidate asn mmdb resolves 8.8.8.0 to Google AS15169"
+[[tests.inputs]]
+insert_at = "lookup"
+type = "log"
+log_fields.addr = "8.8.8.0"
+[[tests.outputs]]
+extract_from = "lookup"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.asn, 15169)
+assert!(contains(string!(.org), "Google"))
+'''
+
+[[tests]]
+name = "candidate asn mmdb resolves an IPv6 Cloudflare network"
+[[tests.inputs]]
+insert_at = "lookup"
+type = "log"
+log_fields.addr = "2606:4700::"
+[[tests.outputs]]
+extract_from = "lookup"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.asn, 13335)
+assert!(is_string(.org))
+'''
