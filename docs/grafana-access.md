@@ -27,7 +27,8 @@ obs-vmauth (same allowlist), with a dedicated no-shell tunnel user.
 
 ## How (a) is built (role `obs`, `obs_grafana_access_enabled`, default **false**)
 
-- `obs-vmauth` (vmutils v1.157.0, sha256 pinned) in `obs.slice`, `MemoryMax=64M`, runs as uid `obs`, `BindsTo=obs-nft-guard`
+- `obs-vmauth` (vmutils v1.157.0, sha256 pinned) in `obs.slice`, `MemoryMax=64M`, runs as uid `obs`,
+  `After=`/`Wants=tailscaled.service`, `BindsTo=obs-nft-guard`
   (never listens without the source pin). Listens on `tailscale_ip:8427`; its own `/metrics`, `/flags`, `/debug/pprof`
   are on `127.0.0.1:8426` only (scraped by VM).
 - `/etc/obs/vmauth.yml` (0640 root:obs, `no_log`): user `grafana-vm` → VM read paths (`/api/v1/query`, `query_range`,
@@ -50,9 +51,14 @@ obs-vmauth (same allowlist), with a dedicated no-shell tunnel user.
   when both gateway tokens are set.
 - Dashboards (folder `lemdro.id`, `allowUiUpdates: false`): Interactions, Health, Error logs, Maps.
 - Cole-only: systemd drop-in env (grafana.ini untouched) — anonymous off, sign-up off, org creation off, public
-  dashboards off, external snapshots off, Gravatar off. Folder permission set to Admin only through the API.
-  OSS Grafana cannot restrict datasources per user, so org membership is the gate: the play fails if the org has
-  users other than `grafana_lemdroid_allowed_logins`.
+  dashboards off, local snapshots off (`GF_SNAPSHOTS_ENABLED=false`; a snapshot URL is viewable without login),
+  external snapshots off, Gravatar off. Folder permission set to Admin only through the API.
+  OSS Grafana cannot restrict datasources per user, so org membership is the gate. When the admin token is set,
+  the play **asserts** (it does not warn) that every org login is in `grafana_lemdroid_allowed_logins`, except
+  logins matching `^sa-` (Grafana service accounts). An empty list does not skip the check: any other member
+  fails the play. Cole's Grafana username is not in this repo, so the default list is empty. Set it in
+  `group_vars/grafana_home/vars.yml`. That list must be non-empty when `obs_grafana_access_enabled` is true
+  (the assert reads the flag from `group_vars/lemdroid`, or from `-e` on `grafana.yml`, and runs before the API call).
 
 ### Finding: Grafana is reachable from the internet
 
@@ -71,15 +77,30 @@ Until then, the login page is the only barrier in front of the lemdro.id dashboa
    (Grafana service account, Admin).
 3. Ansible SSH access to CT 102 for `grafana.yml` (not set up today), or apply the role by hand.
 4. NPM access list for `grafana.corvettecole.com` (above).
-5. Setting `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid`.
+5. Setting `grafana_lemdroid_allowed_logins` in `group_vars/grafana_home` (Cole's Grafana login; required before
+   the gateway flag), then `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid`.
+
+## Outbound from lemdroid-ovh (only when `obs_geoip_enabled`)
+
+`obs-geoip-refresh` does two kinds of fetch, and sends no visitor data:
+
+1. The monthly DB-IP City Lite file from `download.db-ip.com`.
+2. `https://www.cloudflare.com/ips-v4` and `https://www.cloudflare.com/ips-v6`, compared with the vendored list.
+   A difference only sets `obs_geoip_cf_ranges_drift`; it does not change the ranges Vector uses.
 
 ## Impact: what goes down
 
-- lemdroid-ovh (`--tags obs`): obs-vector restarts once (config + new nginx-out file); journald lines during the
-  few-second restart are not collected (journald source starts at "now"); nginx/Postgres file sources resume from
-  checkpoints. `systemctl daemon-reload`; nft `obs_guard` table reloaded (own table only); obs-victoriametrics
-  reloaded (scrape config). obs-vmauth started. Nothing outside obs-* restarts; Lemmy, nginx, Postgres, pict-rs,
-  cloudflared untouched; `lemdroid_start_services` stays false; no `postgres_allow_restart`.
+- lemdroid-ovh (`--tags obs`): **obs-vector restarts once even when both `obs_grafana_access_enabled` and
+  `obs_geoip_enabled` are false.** The unit's MemoryMax moves from 192M to 256M (live cgroup was about 185M of
+  192M), and the role installs `nginx-out.toml`. The same run **downloads and unpacks vmutils** (sha256-pinned);
+  it is in `obs_binaries` unconditionally. The obs-vmauth unit is not installed while the gateway flag is false.
+  Journald lines during the few-second restart are not collected (journald source starts at "now"); nginx/Postgres
+  file sources resume from checkpoints. `systemctl daemon-reload`; nft `obs_guard` table reloaded (own table only);
+  obs-victoriametrics reloaded (scrape config). With the gateway flag on, obs-vmauth starts (`After=` and
+  `Wants=tailscaled.service`). `obs.slice` MemoryHigh/MemoryMax is 1344M/1600M with GeoIP off (was 1280M/1536M,
+  so the unit caps, including obs-vmauth 64M, still fit under MemoryHigh) and 1664M/1920M with GeoIP on (vector
+  512M). Nothing outside obs-* restarts; Lemmy, nginx, Postgres, pict-rs, cloudflared untouched;
+  `lemdroid_start_services` stays false; no `postgres_allow_restart`.
 - CT 102: grafana-server restarts (a few seconds of Grafana downtime). Influx, Telegraf untouched.
 
 ## Undo

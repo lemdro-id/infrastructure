@@ -93,8 +93,10 @@ obs_log_acls:
   - {dir: /var/log/postgresql, files: [/var/log/postgresql/postgresql-16-main.log]}
   - {dir: /var/log/lemdroid-nginx, files: [/var/log/lemdroid-nginx/access.json, /var/log/lemdroid-nginx/access.json.1]}
 
-# systemd units. All run as obs in obs.slice (MemoryHigh 1.25G / MemoryMax 1.5G for the whole slice), plus a
-# per-unit MemoryMax. rw = extra writable paths (ProtectSystem=strict everywhere).
+# systemd units. All run as obs in obs.slice. Slice MemoryHigh/MemoryMax is 1344M/1600M with GeoIP off
+# and 1664M/1920M with GeoIP on (templates/obs.slice.j2): the sum of these per-unit MemoryMax values,
+# including obs-vmauth 64M when the gateway is on, stays under MemoryHigh. rw = extra writable paths
+# (ProtectSystem=strict everywhere).
 obs_units:
   - name: obs-victoriametrics
     bin: victoria-metrics
@@ -170,8 +172,9 @@ obs_units:
       - "--collector.textfile.directory={{ obs_data }}/textfile"
   - name: obs-vector
     bin: vector
-    # P2 GeoIP: the offline City DB is read into memory (~125 MB) and a reload briefly holds two copies.
-    memory_max: "{{ '512M' if obs_geoip_enabled else '192M' }}"
+    # GeoIP off: 256M (live cgroup was ~185M of a 192M cap). GeoIP on: the City DB is ~125 MB in the heap
+    # and a reload briefly holds two copies, so 512M.
+    memory_max: "{{ '512M' if obs_geoip_enabled else '256M' }}"
     supplementary_groups: [systemd-journal]   # read the journal; NOT adm, NOT docker
     rw: ["{{ obs_data }}/vector"]
     env: ["VECTOR_LOG=warn"]
@@ -246,6 +249,8 @@ obs_vmauth_unit:
   name: obs-vmauth
   bin: vmauth
   memory_max: 64M
+  after: [tailscaled.service]         # the listen address is the Tailscale IP
+  wants: [tailscaled.service]
   binds_to: [obs-nft-guard.service]   # never listens without the CT-102-only source pin
   rw: []
   args:
@@ -267,8 +272,9 @@ obs_geoip_db: "{{ obs_geoip_dir }}/dbip-city-lite.mmdb"
 obs_geoip_url_template: "https://download.db-ip.com/free/dbip-city-lite-{month}.mmdb.gz"
 # Cloudflare ranges (vendored from https://www.cloudflare.com/ips-v4 and /ips-v6, 2026-11-24). Networks inside them
 # get geo_cdn=cloudflare (a federation peer egressing via Cloudflare is grouped as "CDN", not placed on the map).
-# obs-geoip-refresh compares this list with Cloudflare's weekly and sets obs_geoip_cf_ranges_drift=1 on a change;
-# the fix is a PR to this list (the VRL is rendered from it).
+# When GeoIP is on, obs-geoip-refresh GETs those two URLs weekly (the second outbound fetch, after the DB-IP
+# download; no visitor data) and sets obs_geoip_cf_ranges_drift=1 on a change. The fix is a PR to this list
+# (the VRL is rendered from it).
 obs_cloudflare_ips:
   - 173.245.48.0/20
   - 103.21.244.0/22

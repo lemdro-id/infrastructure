@@ -25,17 +25,22 @@ grafana_lemdroid_vl_plugin: victoriametrics-logs-datasource
 grafana_lemdroid_vl_plugin_version: 0.34.0
 
 # Cole-only viewing. Server-wide hardening via a systemd drop-in (env overrides grafana.ini; grafana.ini untouched):
-# no anonymous access, no sign-up, no public/shared dashboards, no external snapshots (nothing leaves the CT).
+# no anonymous access, no sign-up, no public/shared dashboards, no local snapshots (a snapshot URL is viewable
+# without login, and grafana.corvettecole.com is on the public internet), no external snapshots.
 grafana_lemdroid_env:
   GF_AUTH_ANONYMOUS_ENABLED: "false"
   GF_USERS_ALLOW_SIGN_UP: "false"
   GF_USERS_ALLOW_ORG_CREATE: "false"
+  GF_SNAPSHOTS_ENABLED: "false"
   GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
   GF_PUBLIC_DASHBOARDS_ENABLED: "false"
   GF_SECURITY_DISABLE_GRAVATAR: "true"
-# The lemdro.id folder is restricted to the Admin role (Cole) through the HTTP API, with a service-account token
-# (Admin) from vault. Org users other than these logins fail the play (OSS Grafana can't restrict datasources:
-# any org member could query them, so membership itself is the gate). Empty list = check skipped (warn).
+# The lemdro.id folder is restricted to the Admin role through the HTTP API, with a service-account token
+# (Admin) from vault. OSS Grafana can't restrict datasources, so org membership is the gate: the play fails
+# if any org login is outside this list (service accounts matching ^sa- are ignored). An empty list does not
+# skip that check. Cole's Grafana username is not recorded in this repo, so there is no default login.
+# Set the real list in group_vars/grafana_home/vars.yml. It must be non-empty when obs_grafana_access_enabled
+# is true on lemdroid-ovh.
 grafana_lemdroid_api_url: http://127.0.0.1:3000
 grafana_lemdroid_admin_token: "{{ vault_grafana_admin_token | default('') }}"
 grafana_lemdroid_allowed_logins: []

@@ -11,7 +11,8 @@ ExecStartPost (+), which reloads obs-vector (SIGHUP) when this run installed a n
   4. Compare the vendored Cloudflare ranges (rendered by Ansible) with https://www.cloudflare.com/ips-v4|v6.
      A difference only sets obs_geoip_cf_ranges_drift=1 (the fix is a PR to obs_cloudflare_ips).
 Never replaces a good database with a bad one: any failure leaves the live file untouched and exits non-zero.
-Nothing here sends client data anywhere: the only requests are two static downloads.
+Nothing here sends client data anywhere. Outbound requests are the DB-IP City Lite file from
+download.db-ip.com, then https://www.cloudflare.com/ips-v4 and /ips-v6 for the CDN-range drift check.
 Health -> node_exporter textfile dir -> VictoriaMetrics (obs_geoip_*).
 """
 import datetime as dt

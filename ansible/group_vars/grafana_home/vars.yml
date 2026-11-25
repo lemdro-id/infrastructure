@@ -1,0 +1,11 @@
+# Non-secret settings for CT 102 grafana-influx (playbook grafana.yml). Secrets stay in the vault.
+
+# Grafana org logins that may exist once lemdro.id datasources are provisioned. OSS Grafana cannot
+# restrict a datasource to one user, so any other org member can query them. The play fails if a login
+# is an org member and is not in this list (service accounts whose login matches ^sa- are ignored).
+# An empty list does not skip that check.
+# Cole's Grafana username is not recorded in this repo, so this stays empty until it is filled in.
+# Required to be non-empty when obs_grafana_access_enabled is true (group_vars/lemdroid/vars.yml).
+grafana_lemdroid_allowed_logins: []
+# grafana_lemdroid_allowed_logins:
+#   - "<Cole's Grafana login>"
