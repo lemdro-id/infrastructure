@@ -12,7 +12,7 @@
   "version": 1,
   "timezone": "browser",
   "time": {
-    "from": "now-24h",
+    "from": "now-6h",
     "to": "now"
   },
   "refresh": "5m",
@@ -112,7 +112,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare | stats by (geo_country) count() requests, count_uniq(client_net) networks",
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -398,7 +398,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare | stats by (geo_country) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 40",
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 40",
           "queryType": "stats",
           "editorMode": "code"
         }
@@ -543,8 +543,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Requests/s by country (top 10, VictoriaMetrics)",
-      "description": "From the bounded per-country counter (country x client type only).",
+      "title": "Requests/s by country (top 10, all nginx traffic)",
+      "description": "VictoriaMetrics lemdroid_nginx_requests_by_geo_total is labeled only by geo_country and ua_class. This panel counts every request in the selected user-agent classes, including federation inbox, health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ.",
       "datasource": {
         "type": "prometheus",
         "uid": "lemdroid-vm"
@@ -863,7 +863,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx route_class:inbox -geo_cdn:cloudflare | stats by (geo_country) count() activities | sort by (activities desc) | limit 20",
+          "expr": "source:nginx route_class:inbox -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() activities | sort by (activities desc) | limit 20",
           "queryType": "stats",
           "editorMode": "code",
           "legendFormat": "{{geo_country}}"
@@ -918,7 +918,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "lemdroid-vl"
           },
-          "expr": "source:nginx route_class:inbox | stats by (sig_host, geo_cdn, geo_country, geo_city) count() activities | sort by (activities desc) | limit 50",
+          "expr": "source:nginx route_class:inbox geo_country:* | stats by (sig_host, geo_cdn, geo_country, geo_city) count() activities | sort by (activities desc) | limit 50",
           "queryType": "stats",
           "editorMode": "code"
         }
