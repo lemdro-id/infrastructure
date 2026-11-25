@@ -1,0 +1,1174 @@
+{
+  "uid": "lemdroid-interactions",
+  "title": "lemdro.id \u00b7 Interactions (who actually uses it)",
+  "tags": [
+    "lemdro.id",
+    "interactions"
+  ],
+  "description": "Distinct users who commented, posted or voted (Influx lemdroid_interactions, hourly from obs-interactions on lemdroid-ovh; counts only, no user ids). Bots and mod-removed content excluded. Daily/weekly windows are UTC; the current window is partial until it closes.",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "30m",
+  "fiscalYearStartMonth": 0,
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "lemdro.id"
+      ],
+      "asDropdown": false,
+      "title": "lemdro.id",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "custom",
+        "name": "kind",
+        "label": "Interaction",
+        "description": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "query": "any : any,comment : comment,post : post,vote : vote",
+        "options": [
+          {
+            "text": "any",
+            "value": "any",
+            "selected": true
+          },
+          {
+            "text": "comment",
+            "value": "comment",
+            "selected": false
+          },
+          {
+            "text": "post",
+            "value": "post",
+            "selected": false
+          },
+          {
+            "text": "vote",
+            "value": "vote",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "any",
+          "value": "any"
+        }
+      },
+      {
+        "type": "custom",
+        "name": "where",
+        "label": "Communities",
+        "description": "all = whole site; lemdro.id = communities hosted here; remote = communities hosted elsewhere",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "query": "all communities : all,lemdro.id communities : local,remote communities : remote",
+        "options": [
+          {
+            "text": "all communities",
+            "value": "all",
+            "selected": true
+          },
+          {
+            "text": "lemdro.id communities",
+            "value": "local",
+            "selected": false
+          },
+          {
+            "text": "remote communities",
+            "value": "remote",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "all communities",
+          "value": "all"
+        }
+      },
+      {
+        "type": "custom",
+        "name": "period",
+        "label": "Window (tables)",
+        "description": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "query": "day : day,week : week",
+        "options": [
+          {
+            "text": "day",
+            "value": "day",
+            "selected": false
+          },
+          {
+            "text": "week",
+            "value": "week",
+            "selected": true
+          }
+        ],
+        "current": {
+          "text": "week",
+          "value": "week"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Headline: distinct active users (last COMPLETE UTC day / ISO week; kind from the variable)",
+      "collapsed": false,
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Local users \u00b7 last full day",
+      "description": "lemdro.id accounts that commented/posted/voted anywhere (ignores Communities).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"day\" and r.scope == \"site\" and r.kind == \"${kind}\" and not exists r.community_local)\n  |> filter(fn: (r) => r._field == \"users_local\" or r._field == \"complete\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => r.complete == true)\n  |> sort(columns: [\"_time\"])\n  |> last(column: \"users_local\")\n  |> keep(columns: [\"_time\", \"users_local\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Remote users on lemdro.id communities \u00b7 last full day",
+      "description": "People from other instances interacting in communities hosted on lemdro.id.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"day\" and r.scope == \"site\" and r.kind == \"${kind}\" and r.community_local == \"true\")\n  |> filter(fn: (r) => r._field == \"users_remote\" or r._field == \"complete\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => r.complete == true)\n  |> sort(columns: [\"_time\"])\n  |> last(column: \"users_remote\")\n  |> keep(columns: [\"_time\", \"users_remote\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Local users \u00b7 last full week",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"week\" and r.scope == \"site\" and r.kind == \"${kind}\" and not exists r.community_local)\n  |> filter(fn: (r) => r._field == \"users_local\" or r._field == \"complete\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => r.complete == true)\n  |> sort(columns: [\"_time\"])\n  |> last(column: \"users_local\")\n  |> keep(columns: [\"_time\", \"users_local\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Remote users on lemdro.id communities \u00b7 last full week",
+      "description": "Remote people interacting in communities hosted on lemdro.id (ignores the Communities variable).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"week\" and r.scope == \"site\" and r.kind == \"${kind}\" and r.community_local == \"true\")\n  |> filter(fn: (r) => r._field == \"users_remote\" or r._field == \"complete\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => r.complete == true)\n  |> sort(columns: [\"_time\"])\n  |> last(column: \"users_remote\")\n  |> keep(columns: [\"_time\", \"users_remote\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "wideLayout": true
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Daily (UTC days; today is partial)",
+      "collapsed": false,
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily distinct users: local vs remote (${kind}, ${where})",
+      "description": "Local users on the right axis (they are far fewer).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"day\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")))\n  |> filter(fn: (r) => r.kind == \"${kind}\" and (r._field == \"users_local\" or r._field == \"users_remote\"))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> map(fn: (r) => ({r with _field: if r._field == \"users_local\" then \"local users\" else if r._field == \"users_remote\" then \"remote users\" else \"all users\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "pointSize": 6,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "local users"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 6
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "remote users"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily local users by kind (${where})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"day\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")) and r._field == \"users_local\")\n  |> keep(columns: [\"_time\", \"kind\", \"_value\"])\n  |> group(columns: [\"kind\"])\n  |> rename(columns: {kind: \"_field\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 6,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily remote users by kind (${where})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"day\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")) and r._field == \"users_remote\")\n  |> keep(columns: [\"_time\", \"kind\", \"_value\"])\n  |> group(columns: [\"kind\"])\n  |> rename(columns: {kind: \"_field\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 18,
+        "y": 6,
+        "w": 6,
+        "h": 9
+      }
+    },
+    {
+      "type": "row",
+      "title": "Weekly (ISO weeks, Monday 00:00 UTC; this week is partial)",
+      "collapsed": false,
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Weekly distinct users: local vs remote (${kind}, ${where})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"week\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")))\n  |> filter(fn: (r) => r.kind == \"${kind}\" and (r._field == \"users_local\" or r._field == \"users_remote\"))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])\n  |> map(fn: (r) => ({r with _field: if r._field == \"users_local\" then \"local users\" else if r._field == \"users_remote\" then \"remote users\" else \"all users\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "pointSize": 6,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "local users"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 6
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "remote users"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Weekly local users by kind (${where})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"week\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")) and r._field == \"users_local\")\n  |> keep(columns: [\"_time\", \"kind\", \"_value\"])\n  |> group(columns: [\"kind\"])\n  |> rename(columns: {kind: \"_field\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 6,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Weekly remote users by kind (${where})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "from(bucket: \"lemdroid_interactions\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"week\" and r.scope == \"site\" and (if \"${where}\" == \"all\" then not exists r.community_local else r.community_local == (if \"${where}\" == \"local\" then \"true\" else \"false\")) and r._field == \"users_remote\")\n  |> keep(columns: [\"_time\", \"kind\", \"_value\"])\n  |> group(columns: [\"kind\"])\n  |> rename(columns: {kind: \"_field\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 18,
+        "y": 16,
+        "w": 6,
+        "h": 9
+      }
+    },
+    {
+      "type": "row",
+      "title": "Communities by distinct interactors (latest ${period} window, ${kind})",
+      "collapsed": false,
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "lemdro.id communities",
+      "description": "Communities hosted on lemdro.id, ranked by distinct people (local + remote) interacting.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "data = from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"${period}\" and r.scope == \"community\" and r.kind == \"${kind}\" and r.community_local == \"true\")\nlatest = data |> filter(fn: (r) => r._field == \"users\") |> keep(columns: [\"_time\"]) |> group()\n  |> max(column: \"_time\") |> findRecord(fn: (key) => true, idx: 0)\ndata\n  |> filter(fn: (r) => r._time == latest._time and r._field != \"complete\")\n  |> pivot(rowKey: [\"_time\", \"community\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"users\"], desc: true)\n  |> limit(n: 25)\n  |> keep(columns: [\"community\", \"users\", \"users_local\", \"users_remote\"])"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "community": "Community",
+              "users": "Distinct users",
+              "users_local": "Local",
+              "users_remote": "Remote"
+            },
+            "indexByName": {
+              "community": 0,
+              "users": 1,
+              "users_local": 2,
+              "users_remote": 3
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Community"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 210
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 8,
+        "h": 12
+      }
+    },
+    {
+      "type": "table",
+      "title": "Remote communities where lemdro.id users interact",
+      "description": "Ranked by local (lemdro.id) users. Remote communities with no local users are only kept for the top 200 by total (obs_interactions_top_remote).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "data = from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"${period}\" and r.scope == \"community\" and r.kind == \"${kind}\" and r.community_local == \"false\")\nlatest = data |> filter(fn: (r) => r._field == \"users\") |> keep(columns: [\"_time\"]) |> group()\n  |> max(column: \"_time\") |> findRecord(fn: (key) => true, idx: 0)\ndata\n  |> filter(fn: (r) => r._time == latest._time and r._field != \"complete\")\n  |> pivot(rowKey: [\"_time\", \"community\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"users_local\"], desc: true)\n  |> limit(n: 25)\n  |> keep(columns: [\"community\", \"users\", \"users_local\", \"users_remote\"])"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "community": "Community",
+              "users": "Distinct users",
+              "users_local": "Local",
+              "users_remote": "Remote"
+            },
+            "indexByName": {
+              "community": 0,
+              "users": 1,
+              "users_local": 2,
+              "users_remote": 3
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Community"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 210
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 16,
+      "gridPos": {
+        "x": 8,
+        "y": 26,
+        "w": 8,
+        "h": 12
+      }
+    },
+    {
+      "type": "table",
+      "title": "All communities (what lemdro.id sees)",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "data = from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"${period}\" and r.scope == \"community\" and r.kind == \"${kind}\" and true)\nlatest = data |> filter(fn: (r) => r._field == \"users\") |> keep(columns: [\"_time\"]) |> group()\n  |> max(column: \"_time\") |> findRecord(fn: (key) => true, idx: 0)\ndata\n  |> filter(fn: (r) => r._time == latest._time and r._field != \"complete\")\n  |> pivot(rowKey: [\"_time\", \"community\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"users\"], desc: true)\n  |> limit(n: 25)\n  |> keep(columns: [\"community\", \"users\", \"users_local\", \"users_remote\"])"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "community": "Community",
+              "users": "Distinct users",
+              "users_local": "Local",
+              "users_remote": "Remote"
+            },
+            "indexByName": {
+              "community": 0,
+              "users": 1,
+              "users_local": 2,
+              "users_remote": 3
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Community"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 210
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 17,
+      "gridPos": {
+        "x": 16,
+        "y": 26,
+        "w": 8,
+        "h": 12
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Where interactors come from (home instance, latest ${period})",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "lemdroid-influx"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "lemdroid-influx"
+          },
+          "query": "data = from(bucket: \"lemdroid_interactions\")\n  |> range(start: -35d, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lemdroid_interactions\" and r.period == \"${period}\" and r.scope == \"site_home\" and r.kind == \"${kind}\" and r._field == \"users\")\nlatest = data |> keep(columns: [\"_time\"]) |> group() |> max(column: \"_time\") |> findRecord(fn: (key) => true, idx: 0)\ndata\n  |> filter(fn: (r) => r._time == latest._time and r.home_instance != \"_other\")\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 20)\n  |> keep(columns: [\"home_instance\", \"_value\"])\n  |> rename(columns: {_value: \"users\"})"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "home_instance",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "users",
+                "handlerKey": "field.value"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "id": 18,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "text",
+      "title": "Notes",
+      "options": {
+        "mode": "markdown",
+        "content": "**How to read this**\n\n* *Local users* = lemdro.id accounts. *Remote users* = accounts on other instances whose comments, posts or votes federated here.\n* Each number is **distinct people** in the window, so days don't add up to a week.\n* *any* = did at least one of comment / post / vote.\n* Source: `obs_api.interactions()` on lemdroid-ovh (counts only), written hourly at :07 UTC to Influx bucket `lemdroid_interactions`; late federation is re-counted for 2 days."
+      },
+      "id": 19,
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}

@@ -1,0 +1,1002 @@
+{
+  "uid": "lemdroid-maps",
+  "title": "lemdro.id \u00b7 Maps (visitors and federation)",
+  "tags": [
+    "lemdro.id",
+    "maps"
+  ],
+  "description": "Offline GeoIP of the truncated client network (/24, /48) only, done in Vector on lemdroid-ovh with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "fiscalYearStartMonth": 0,
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "lemdro.id"
+      ],
+      "asDropdown": false,
+      "title": "lemdro.id",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "custom",
+        "name": "ua",
+        "label": "Visitors",
+        "multi": true,
+        "includeAll": false,
+        "hide": 0,
+        "query": "browser,app,other,bot_or_tool,none",
+        "current": {
+          "text": [
+            "browser",
+            "app"
+          ],
+          "value": [
+            "browser",
+            "app"
+          ]
+        },
+        "options": [
+          {
+            "text": "browser",
+            "value": "browser",
+            "selected": true
+          },
+          {
+            "text": "app",
+            "value": "app",
+            "selected": true
+          },
+          {
+            "text": "other",
+            "value": "other",
+            "selected": false
+          },
+          {
+            "text": "bot_or_tool",
+            "value": "bot_or_tool",
+            "selected": false
+          },
+          {
+            "text": "none",
+            "value": "none",
+            "selected": false
+          }
+        ],
+        "description": "User-agent class (federation servers are on the federation map, not here)."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Visitors",
+      "collapsed": false,
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "geomap",
+      "title": "Visitors by country (circle size = requests)",
+      "description": "Excludes federation (inbox), health checks and Cloudflare-egress networks (WARP/Workers). Tooltip shows distinct /24 (or /48) networks too. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare | stats by (geo_country) count() requests, count_uniq(client_net) networks",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "zero",
+          "lat": 25,
+          "lon": 0,
+          "zoom": 1.6,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false,
+          "showMeasure": false,
+          "showDebug": false
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Basemap",
+          "config": {}
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Countries",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "blue"
+                },
+                "opacity": 0.5,
+                "size": {
+                  "field": "requests",
+                  "fixed": 5,
+                  "min": 3,
+                  "max": 40
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 10,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "lookup",
+              "lookup": "geo_country",
+              "gazetteer": "public/gazetteer/countries.json"
+            },
+            "tooltip": true
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 13
+      }
+    },
+    {
+      "type": "geomap",
+      "title": "Visitors by city (top 1000 cities)",
+      "description": "Dots at the DB's city centroid rounded to 0.1 deg; networks without a city are only in the country map. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_lat:* | stats by (geo_country, geo_city, geo_lat, geo_lon) count() requests | sort by (requests desc) | limit 1000",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "geo_lat",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "geo_lon",
+                "destinationType": "number"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "zero",
+          "lat": 25,
+          "lon": 0,
+          "zoom": 1.6,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false,
+          "showMeasure": false,
+          "showDebug": false
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Basemap",
+          "config": {}
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Cities",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "orange"
+                },
+                "opacity": 0.5,
+                "size": {
+                  "field": "requests",
+                  "fixed": 5,
+                  "min": 3,
+                  "max": 18
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 10,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "geo_lat",
+              "longitude": "geo_lon"
+            },
+            "tooltip": true
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 13
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top countries: requests and distinct /24 (or /48) networks",
+      "description": "Networks = distinct truncated client networks (/24 IPv4, /48 IPv6): a rough 'how many places'.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare | stats by (geo_country) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 40",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "geo_country": "Country",
+              "requests": "Requests",
+              "networks": "Networks"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 7,
+        "h": 10
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top cities",
+      "description": "",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare geo_city:* | stats by (geo_country, geo_region, geo_city) count() requests, count_uniq(client_net) networks | sort by (requests desc) | limit 50",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "geo_country": "Country",
+              "geo_region": "Region",
+              "geo_city": "City",
+              "requests": "Requests",
+              "networks": "Networks"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 7,
+        "y": 14,
+        "w": 9,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests/s by country (top 10, VictoriaMetrics)",
+      "description": "From the bounded per-country counter (country x client type only).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lemdroid-vm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lemdroid-vm"
+          },
+          "expr": "topk(10, sum by (geo_country) (rate(lemdroid_nginx_requests_by_geo_total{ua_class=~\"${ua:regex}\"}[$__rate_interval])))",
+          "legendFormat": "{{geo_country}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 6,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "barAlignment": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 16,
+        "y": 14,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "Federation: inbound peers placed by their server's network",
+      "collapsed": false,
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "geomap",
+      "title": "Peers sending to lemdro.id (dot size = inbox POSTs)",
+      "description": "Each dot = one sending instance (HTTP-signature host) at the city of the network it sent from. Peers whose egress is a Cloudflare range are listed as CDN on the right instead. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0).",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx route_class:inbox -geo_cdn:cloudflare geo_lat:* | stats by (sig_host, geo_country, geo_city, geo_lat, geo_lon) count() activities | sort by (activities desc) | limit 500",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "geo_lat",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "geo_lon",
+                "destinationType": "number"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "zero",
+          "lat": 25,
+          "lon": 0,
+          "zoom": 1.6,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false,
+          "showMeasure": false,
+          "showDebug": false
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Basemap",
+          "config": {}
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Peers",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "green"
+                },
+                "opacity": 0.5,
+                "size": {
+                  "field": "activities",
+                  "fixed": 5,
+                  "min": 3,
+                  "max": 30
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 10,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "geo_lat",
+              "longitude": "geo_lon"
+            },
+            "tooltip": true
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 16,
+        "h": 14
+      }
+    },
+    {
+      "type": "table",
+      "title": "CDN-fronted senders (Cloudflare egress, not mapped)",
+      "description": "",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx route_class:inbox geo_cdn:cloudflare | stats by (sig_host) count() activities | sort by (activities desc) | limit 50",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "sig_host": "Instance",
+              "activities": "Activities"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Activities",
+            "desc": true
+          }
+        ]
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 16,
+        "y": 25,
+        "w": 8,
+        "h": 14
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Inbound activity by peer country",
+      "description": "",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx route_class:inbox -geo_cdn:cloudflare | stats by (geo_country) count() activities | sort by (activities desc) | limit 20",
+          "queryType": "stats",
+          "editorMode": "code",
+          "legendFormat": "{{geo_country}}"
+        }
+      ],
+      "transformations": [],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top senders with location",
+      "description": "",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "lemdroid-vl"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "lemdroid-vl"
+          },
+          "expr": "source:nginx route_class:inbox | stats by (sig_host, geo_cdn, geo_country, geo_city) count() activities | sort by (activities desc) | limit 50",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "__name__"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "sig_host": "Instance",
+              "geo_cdn": "CDN",
+              "geo_country": "Country",
+              "geo_city": "City",
+              "activities": "Activities"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Activities",
+            "desc": true
+          }
+        ]
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "text",
+      "title": "",
+      "options": {
+        "mode": "markdown",
+        "content": "Geolocation is approximate (city at best, often only country) and comes from an offline database on lemdroid-ovh; no lookup service is ever called. IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP Lite City, CC BY 4.0). Basemap tiles are loaded by your browser from the Grafana default tile provider."
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 2
+      }
+    }
+  ]
+}

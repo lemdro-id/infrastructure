@@ -1,0 +1,14 @@
+# {{ ansible_managed }} (role grafana_lemdroid). Dashboards from files (git is the source; UI edits are not saved).
+apiVersion: 1
+providers:
+  - name: lemdroid
+    orgId: 1
+    folder: {{ grafana_lemdroid_folder_title | to_json }}
+    folderUid: {{ grafana_lemdroid_folder_uid }}
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: {{ grafana_lemdroid_dashboards_dir }}
+      foldersFromFilesStructure: false

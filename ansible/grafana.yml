@@ -1,0 +1,13 @@
+# lemdro.id Grafana (obs plan P2) on CT 102 grafana-influx: datasources, dashboards, login-required hardening.
+# Any logged-in Grafana user may view the folder (owner decision). Anonymous access stays off.
+# Touches Grafana only (provisioning files, one systemd drop-in, one plugin); restarts grafana-server only.
+# Influx, Telegraf and everything else on CT 102 are left alone. See ../docs/grafana-access.md.
+#
+# Check first (changes nothing):
+#   ansible-playbook grafana.yml -e @vault.yml --vault-password-file <path> --check --diff
+- name: Provision lemdro.id dashboards on Grafana (CT 102)
+  hosts: grafana_home
+  become: true
+  roles:
+    - role: grafana_lemdroid
+      tags: [grafana]

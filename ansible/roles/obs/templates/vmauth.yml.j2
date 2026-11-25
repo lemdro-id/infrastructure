@@ -1,0 +1,30 @@
+# {{ ansible_managed }} (role obs). P2: read-only gateway for Grafana on CT 102 (docs/grafana-access.md).
+# Listens on the Tailscale IP only; nft (inet obs_guard) admits CT 102's tailnet IP only. One bearer token per
+# datasource. Only the read paths Grafana needs are routed; anything else (writes, imports, export, admin,
+# delete, snapshot, vmui, the vl-ip store on :{{ obs_ports.vl_ip }}) has no route and gets an error from vmauth.
+# No unauthorized_user section: requests without a valid token get 401.
+users:
+  - name: grafana-vm
+    bearer_token: {{ obs_grafana_vm_token | to_json }}
+    max_concurrent_requests: 8
+    url_map:
+      - src_paths:
+          - "/api/v1/query"
+          - "/api/v1/query_range"
+          - "/api/v1/series"
+          - "/api/v1/labels"
+          - "/api/v1/label/[^/]+/values"
+          - "/api/v1/metadata"
+          - "/api/v1/status/buildinfo"
+          - "/api/v1/query_exemplars"
+        url_prefix: "http://127.0.0.1:{{ obs_ports.victoriametrics }}"
+        drop_src_path_prefix_parts: 0
+  - name: grafana-vl
+    bearer_token: {{ obs_grafana_vl_token | to_json }}
+    max_concurrent_requests: 4
+    url_map:
+      - src_paths:
+          - "/select/logsql/(query|hits|stats_query|stats_query_range|field_names|field_values|stream_field_names|stream_field_values|streams|stream_ids|facets)"
+        # main (scrubbed) VictoriaLogs only; vl-ip is never a target
+        url_prefix: "http://127.0.0.1:{{ obs_ports.victorialogs }}"
+        drop_src_path_prefix_parts: 0

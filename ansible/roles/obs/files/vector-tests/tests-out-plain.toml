@@ -1,0 +1,17 @@
+# Runs with nginx-out.toml = nginx-out-plain.toml (obs_geoip_enabled=false): nginx_out is a pure pass-through.
+[[tests]]
+name = "nginx_out (plain): pass-through, no geo fields, no full IP"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.103","request_id":"p1","cf_ray":"","cf_country":"US","client_ip":"8.8.8.77","host":"lemdro.id","method":"GET","request_uri":"/post/1","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"100","request_time":"0.010","upstream":"127.0.0.1:1234","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_out"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_net, "8.8.8.0/24")
+assert!(!exists(.client_ip))
+assert!(!exists(.geo_country))
+assert!(!contains(encode_json(.), "8.8.8.77"))
+'''

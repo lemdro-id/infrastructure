@@ -1,0 +1,56 @@
+# {{ ansible_managed }} (role grafana_lemdroid). lemdro.id datasources. Fixed UIDs (the dashboards reference them).
+# Tokens are vault refs only; this file is root:grafana 0640. editable: false = UI edits can't drift from git.
+apiVersion: 1
+
+deleteDatasources:
+{% if not grafana_lemdroid_gateway_enabled %}
+  - {name: lemdro.id VictoriaMetrics, orgId: 1}
+  - {name: lemdro.id VictoriaLogs, orgId: 1}
+{% else %}
+  []
+{% endif %}
+
+datasources:
+  - name: lemdro.id Influx (interactions)
+    uid: lemdroid-influx
+    type: influxdb
+    access: proxy
+    orgId: 1
+    url: {{ grafana_lemdroid_influx_url }}
+    editable: false
+    jsonData:
+      version: Flux
+      organization: {{ grafana_lemdroid_influx_org }}
+      defaultBucket: {{ grafana_lemdroid_influx_bucket }}
+      timeInterval: 1h
+    secureJsonData:
+      token: {{ grafana_lemdroid_influx_token | to_json }}
+{% if grafana_lemdroid_gateway_enabled %}
+  - name: lemdro.id VictoriaMetrics
+    uid: lemdroid-vm
+    type: prometheus
+    access: proxy           # server-side: the token never reaches a browser
+    orgId: 1
+    url: {{ grafana_lemdroid_gateway_url }}
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      prometheusType: Prometheus
+      httpHeaderName1: Authorization
+      timeout: 60
+    secureJsonData:
+      httpHeaderValue1: {{ ('Bearer ' ~ grafana_lemdroid_vm_token) | to_json }}
+  - name: lemdro.id VictoriaLogs
+    uid: lemdroid-vl
+    type: {{ grafana_lemdroid_vl_plugin }}
+    access: proxy
+    orgId: 1
+    url: {{ grafana_lemdroid_gateway_url }}
+    editable: false
+    jsonData:
+      httpHeaderName1: Authorization
+      maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: {{ ('Bearer ' ~ grafana_lemdroid_vl_token) | to_json }}
+{% endif %}

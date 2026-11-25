@@ -1,0 +1,5 @@
+# {{ ansible_managed }} (role grafana_lemdroid). Hardening overrides for Grafana (env beats grafana.ini).
+[Service]
+{% for k, v in grafana_lemdroid_env | dictsort %}
+Environment="{{ k }}={{ v }}"
+{% endfor %}

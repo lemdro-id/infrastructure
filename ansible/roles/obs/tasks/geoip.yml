@@ -1,0 +1,78 @@
+# P2: offline GeoIP for the maps (obs_geoip_enabled). DB-IP "IP to City Lite", CC BY 4.0 (attribution on the Grafana
+# maps dashboard). Runs BEFORE vector.yml: the GeoIP variant of nginx-out.toml needs the DB on disk, so a fresh
+# enable seeds it first (the refresh unit validates it with Vector itself) and fails the play if that fails.
+- name: GeoIP enabled
+  when: obs_geoip_enabled
+  block:
+    - name: GeoIP directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ obs_user }}"
+        mode: "0750"
+      loop:
+        - {path: "{{ obs_geoip_dir }}", owner: "{{ obs_user }}"}
+        - {path: "{{ obs_etc }}/geoip", owner: root}
+      loop_control: {label: "{{ item.path }}"}
+
+    - name: GeoIP refresh script
+      ansible.builtin.copy:
+        src: geoip/obs-geoip-refresh.py
+        dest: "{{ obs_root }}/libexec/obs-geoip-refresh"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: GeoIP self-test config and vendored Cloudflare ranges
+      ansible.builtin.copy:
+        dest: "{{ obs_etc }}/geoip/{{ item.dest }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: "{{ obs_user }}"
+        mode: "0640"
+      loop:
+        - {dest: selftest.toml, content: "{{ lookup('ansible.builtin.file', 'geoip/selftest.toml') }}\n"}
+        - {dest: cloudflare-ips.txt, content: "# vendored, role obs defaults obs_cloudflare_ips\n{{ obs_cloudflare_ips | join('\n') }}\n"}
+      loop_control: {label: "{{ item.dest }}"}
+
+    - name: GeoIP refresh service and timer
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [obs-geoip-refresh.service, obs-geoip-refresh.timer]
+      register: obs_geoip_units
+
+    - name: daemon-reload (GeoIP units)
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: obs_geoip_units is changed
+
+    - name: GeoIP DB present? (read-only)
+      ansible.builtin.stat:
+        path: "{{ obs_geoip_db }}"
+      register: obs_geoip_db_stat
+
+    - name: Seed the GeoIP DB (download, validate with Vector, install; oneshot, waits)
+      ansible.builtin.systemd_service:
+        name: obs-geoip-refresh.service
+        state: started
+      when:
+        - not ansible_check_mode
+        - not obs_geoip_db_stat.stat.exists
+
+    - name: GeoIP DB must exist before Vector is pointed at it
+      ansible.builtin.stat:
+        path: "{{ obs_geoip_db }}"
+      register: obs_geoip_db_after
+      failed_when: not ansible_check_mode and not obs_geoip_db_after.stat.exists
+
+    - name: GeoIP refresh timer enabled (weekly)
+      ansible.builtin.systemd_service:
+        name: obs-geoip-refresh.timer
+        enabled: true
+        state: started
+      when: not (ansible_check_mode and obs_geoip_units is changed)

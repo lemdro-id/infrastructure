@@ -1,0 +1,31 @@
+# P2: GeoIP off (obs_geoip_enabled=false). Runs AFTER Vector was switched back to the plain nginx-out.toml and
+# restarted, so the DB and geo.vrl are never removed under a Vector that still references them.
+- name: GeoIP disabled -> timer off, units and DB removed (obs-* only)
+  when: not obs_geoip_enabled
+  block:
+    - name: GeoIP timer stopped and disabled
+      ansible.builtin.systemd_service:
+        name: obs-geoip-refresh.timer
+        state: stopped
+        enabled: false
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: GeoIP files absent
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/obs-geoip-refresh.service
+        - /etc/systemd/system/obs-geoip-refresh.timer
+        - "{{ obs_root }}/libexec/obs-geoip-refresh"
+        - "{{ obs_etc }}/geoip"
+        - "{{ obs_etc }}/vector/geo.vrl"
+        - "{{ obs_geoip_dir }}"
+        - "{{ obs_data }}/textfile/obs_geoip.prom"
+      register: obs_geoip_removed
+
+    - name: daemon-reload (GeoIP units removed)
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: obs_geoip_removed is changed

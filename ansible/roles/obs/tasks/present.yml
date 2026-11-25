@@ -38,8 +38,8 @@
   register: obs_dirs
 
 - name: obs.slice (memory/CPU/IO cap for the whole stack)
-  ansible.builtin.copy:
-    src: obs.slice
+  ansible.builtin.template:
+    src: obs.slice.j2
     dest: /etc/systemd/system/obs.slice
     owner: root
     group: root
@@ -116,6 +116,9 @@
     mode: "0640"
   register: obs_cfg_scrape
 
+- name: GeoIP DB and refresh timer (P2; seeds the DB before Vector is pointed at it)
+  ansible.builtin.include_tasks: geoip.yml
+
 - name: Vector config, VRL and tests (tested before any restart)
   ansible.builtin.include_tasks: vector.yml
 
@@ -124,6 +127,9 @@
 
 - name: Postgres collectors and interactions rollup (configs)
   ansible.builtin.include_tasks: pg.yml
+
+- name: Grafana read gateway config (P2; off unless obs_grafana_access_enabled)
+  ansible.builtin.include_tasks: grafana_access.yml
 
 - name: obs units
   ansible.builtin.template:
@@ -148,7 +154,9 @@
 - name: systemd daemon-reload
   ansible.builtin.systemd_service:
     daemon_reload: true
-  when: obs_slice is changed or obs_unit_files is changed or obs_interactions_units is changed
+  when: >-
+    obs_slice is changed or obs_unit_files is changed or obs_interactions_units is changed
+    or (obs_vmauth_removed | default({})) is changed
 
 - name: obs units enabled and running
   ansible.builtin.systemd_service:
@@ -181,6 +189,9 @@
     - "'obs-victoriametrics' not in (obs_started.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.name') | list)"
     - not (ansible_check_mode and obs_unit_files is changed)
 
+- name: GeoIP off -> remove its timer, DB and geo.vrl (after Vector runs the plain config)
+  ansible.builtin.include_tasks: geoip_off.yml
+
 - name: Interactions timer enabled (hourly at :07 UTC; the service itself is a oneshot)
   ansible.builtin.systemd_service:
     name: obs-interactions.timer
@@ -208,6 +219,15 @@
       loop: "{{ obs_ports | dict2items | rejectattr('key', 'match', 'reserved_') | map(attribute='value') | list }}"
       when: not ansible_check_mode
 
+    - name: Grafana gateway listens on the Tailscale IP only (P2; real run only)
+      ansible.builtin.command: ss -Hltn "sport = :{{ obs_grafana_port }}"
+      register: obs_gw_up
+      until: obs_gw_up.stdout is search(obs_grafana_listen_ip | regex_escape ~ ':' ~ obs_grafana_port ~ '\\s')
+      retries: 30
+      delay: 2
+      changed_when: false
+      when: not ansible_check_mode and obs_grafana_access_enabled
+
     - name: Listening sockets (read-only)
       ansible.builtin.command: ss -Hlntup
       register: obs_ss
@@ -221,11 +241,18 @@
         fail_msg: "obs listener not on 127.0.0.1: {{ obs_bad_listeners }}"
         quiet: true
       vars:
-        obs_proc_re: '"(victoria-metric|victoria-logs|node_exporter|process-exporte|vector|postgres_export|sql_exporter)"'
+        obs_proc_re: '"(victoria-metric|victoria-logs|node_exporter|process-exporte|vector|postgres_export|sql_exporter|vmauth)"'
         obs_port_re: '^\S+\s+\S+\s+\d+\s+\d+\s+(?!127\.0\.0\.1:)\S+:({{ obs_ports.values() | reject("in", [8090, 9102, 10002]) | join("|") }})\s'
+        # P2: the one allowed exception is obs-vmauth on <tailscale_ip>:<obs_grafana_port> (when enabled); any
+        # other socket on that port, or vmauth anywhere else but loopback, is a failure.
+        obs_gw_ok_re: '\s{{ obs_grafana_listen_ip | regex_escape }}:{{ obs_grafana_port }}\s.*"vmauth"'
+        obs_gw_port_re: '^\S+\s+\S+\s+\d+\s+\d+\s+\S+:{{ obs_grafana_port }}\s'
         obs_bad_listeners: >-
-          {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s') | list)
-             + (obs_ss.stdout_lines | select('search', obs_port_re) | list) }}
+          {{ (obs_ss.stdout_lines | select('search', obs_proc_re) | reject('search', '\s127\.0\.0\.1:\d+\s')
+                | reject('search', obs_gw_ok_re if obs_grafana_access_enabled else '^$NEVER') | list)
+             + (obs_ss.stdout_lines | select('search', obs_port_re) | list)
+             + (obs_ss.stdout_lines | select('search', obs_gw_port_re)
+                | reject('search', obs_gw_ok_re if obs_grafana_access_enabled else '^$NEVER') | list) }}
   rescue:
     - name: Gate failed -> stop and disable every obs unit and timer (obs-* only)
       ansible.builtin.systemd_service:

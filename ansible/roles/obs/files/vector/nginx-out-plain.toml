@@ -1,0 +1,6 @@
+# nginx-out.toml, plain variant (role obs, obs_geoip_enabled=false). Loaded as a second --config next to vector.toml.
+# Pass-through: the VictoriaLogs sink reads nginx_out, so turning GeoIP on or off is one file swap.
+[transforms.nginx_out]
+type = "remap"
+inputs = ["nginx_main"]
+source = "."

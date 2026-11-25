@@ -1,0 +1,44 @@
+# {{ ansible_managed }} (role obs). nginx-out.toml, GeoIP variant (obs_geoip_enabled=true, PLAN P2 maps).
+# Loaded as a second --config next to vector.toml. Offline DB only: DB-IP "IP to City Lite" (CC BY 4.0,
+# "IP Geolocation by DB-IP", https://db-ip.com), refreshed by obs-geoip-refresh.timer, reloaded with SIGHUP.
+# No lookup ever leaves the box. Input is nginx_main, which has no full IP any more (client_net /24 or /48 only).
+
+[enrichment_tables.geoip]
+type = "mmdb"
+path = "{{ obs_geoip_db }}"
+
+[transforms.nginx_out]
+type = "remap"
+inputs = ["nginx_main"]
+file = "{{ obs_etc }}/vector/geo.vrl"
+# A failed lookup never drops or blocks an event: geo.vrl only uses infallible fallbacks.
+drop_on_error = false
+
+# Requests per country for the long-range trend panel. Bounded: geo_country is an ISO 3166 alpha-2 code or "ZZ"
+# (<= ~250 values) x ua_class (6 values); a hard cap folds anything beyond that instead of growing the TSDB.
+# City, region and coordinates are NOT metric labels (unbounded): the maps read them from VictoriaLogs fields.
+[transforms.nginx_geo_to_metric]
+type = "log_to_metric"
+inputs = ["nginx_out"]
+[[transforms.nginx_geo_to_metric.metrics]]
+type = "counter"
+field = "status"
+name = "requests_by_geo_total"
+namespace = "lemdroid_nginx"
+tags.geo_country = "{{ '{{' }} geo_country {{ '}}' }}"
+tags.ua_class = "{{ '{{' }} ua_class {{ '}}' }}"
+
+[transforms.nginx_geo_limit]
+type = "tag_cardinality_limit"
+inputs = ["nginx_geo_to_metric"]
+mode = "exact"
+value_limit = 260
+limit_exceeded_action = "drop_tag"
+
+[sinks.vm_geo]
+type = "prometheus_remote_write"
+inputs = ["nginx_geo_limit"]
+endpoint = "http://127.0.0.1:{{ obs_ports.victoriametrics }}/api/v1/write"
+healthcheck.enabled = false
+default_namespace = "vector"
+batch.timeout_secs = 5

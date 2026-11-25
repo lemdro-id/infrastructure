@@ -1,0 +1,45 @@
+# {{ ansible_managed }} (role obs). P2: offline GeoIP DB refresh (DB-IP City Lite, CC BY 4.0). Two static downloads
+# (db-ip.com, cloudflare.com ranges); no client data leaves the box. Never replaces a good DB with a bad one.
+[Unit]
+Description=lemdro.id obs: GeoIP database refresh (DB-IP City Lite) + Cloudflare ranges drift check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ obs_user }}
+Group={{ obs_user }}
+Slice=obs.slice
+MemoryMax=256M
+CPUWeight=20
+IOWeight=20
+TimeoutStartSec=20min
+Environment=TZ=UTC
+Environment=OBS_GEOIP_DIR={{ obs_geoip_dir }}
+Environment=OBS_GEOIP_URL_TEMPLATE={{ obs_geoip_url_template }}
+Environment=OBS_GEOIP_CF_LIST={{ obs_etc }}/geoip/cloudflare-ips.txt
+Environment=OBS_GEOIP_SELFTEST={{ obs_etc }}/geoip/selftest.toml
+Environment=OBS_VECTOR_BIN={{ obs_root }}/bin/vector
+Environment=OBS_TEXTFILE={{ obs_data }}/textfile/obs_geoip.prom
+ExecStart={{ obs_root }}/libexec/obs-geoip-refresh
+# Privileged (+) and obs-vector only: SIGHUP so Vector re-reads the new DB; nothing else is reloaded or restarted.
+ExecStartPost=+/bin/sh -c 'if [ -e {{ obs_geoip_dir }}/.changed ]; then rm -f {{ obs_geoip_dir }}/.changed; systemctl is-active --quiet obs-vector && systemctl reload obs-vector || true; fi'
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths={{ obs_geoip_dir }} {{ obs_data }}/textfile
