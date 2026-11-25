@@ -583,7 +583,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "topk(10, sum by (geo_country) (rate(lemdroid_nginx_requests_by_geo_total{ua_class=~\"${ua:regex}\"}[$__rate_interval])))",
+          "expr": "topk(10, sum by (geo_country) ((increase(lemdroid_nginx_requests_by_geo_total{ua_class=~\"${ua:regex}\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "{{geo_country}}",
           "range": true,
           "instant": false,
