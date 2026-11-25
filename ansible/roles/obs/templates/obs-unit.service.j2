@@ -19,7 +19,7 @@ SupplementaryGroups={{ item.supplementary_groups | join(' ') }}
 {% endif %}
 Slice=obs.slice
 MemoryMax={{ item.memory_max }}
-{% for e in item.env | default([]) %}
+{% for e in item.env | default([]) if e %}
 Environment={{ e }}
 {% endfor %}
 {% for e in item.env_files | default([]) %}
