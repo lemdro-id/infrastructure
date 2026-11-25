@@ -84,7 +84,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "sum(rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[5m]))",
+          "expr": "sum((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[5m]) / 5m))",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -141,7 +141,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "(sum(rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\",status_class=\"5xx\"}[5m])) or vector(0)) / sum(rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[5m]))",
+          "expr": "(sum((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\",status_class=\"5xx\"}[5m]) / 5m)) or vector(0)) / sum((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[5m]) / 5m))",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -215,7 +215,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[5m]) / 5m)))",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -504,7 +504,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "sum by (status_class) (rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[$__rate_interval]))",
+          "expr": "sum by (status_class) ((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval))",
           "legendFormat": "{{status_class}}",
           "range": true,
           "instant": false,
@@ -570,7 +570,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "sum by (route_class) (rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[$__rate_interval]))",
+          "expr": "sum by (route_class) ((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval))",
           "legendFormat": "{{route_class}}",
           "range": true,
           "instant": false,
@@ -636,7 +636,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "sum by (ua_class) (rate(lemdroid_nginx_requests_by_client_total{route_class=~\"$route_class\"}[$__rate_interval]))",
+          "expr": "sum by (ua_class) ((increase(lemdroid_nginx_requests_by_client_total{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval))",
           "legendFormat": "{{ua_class}}",
           "range": true,
           "instant": false,
@@ -702,7 +702,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "p50",
           "range": true,
           "instant": false,
@@ -715,7 +715,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "p95",
           "range": true,
           "instant": false,
@@ -728,7 +728,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "p99",
           "range": true,
           "instant": false,
@@ -794,7 +794,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, route_class) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, route_class) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "{{route_class}}",
           "range": true,
           "instant": false,
@@ -860,7 +860,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) ((increase(lemdroid_nginx_request_seconds_bucket{route_class=~\"$route_class\"}[$__rate_interval]) / $__rate_interval))))",
           "legendFormat": "{{route}}",
           "range": true,
           "instant": false,
@@ -926,7 +926,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "topk(10, sum by (route) (rate(lemdroid_nginx_requests_total{route_class=~\"$route_class\",status_class=\"5xx\"}[$__rate_interval])))",
+          "expr": "topk(10, sum by (route) ((increase(lemdroid_nginx_requests_total{route_class=~\"$route_class\",status_class=\"5xx\"}[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "{{route}}",
           "range": true,
           "instant": false,
@@ -2352,7 +2352,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "sum by (status_class) (rate(lemdroid_fed_in_requests_total[$__rate_interval]))",
+          "expr": "sum by (status_class) ((increase(lemdroid_fed_in_requests_total[$__rate_interval]) / $__rate_interval))",
           "legendFormat": "inbox {{status_class}}",
           "range": true,
           "instant": false,
@@ -2497,7 +2497,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "topk(15, sum by (sig_host) (rate(lemdroid_fed_in_requests_total[$__rate_interval])))",
+          "expr": "topk(15, sum by (sig_host) ((increase(lemdroid_fed_in_requests_total[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "{{sig_host}}",
           "range": true,
           "instant": false,
@@ -2563,7 +2563,7 @@
             "type": "prometheus",
             "uid": "lemdroid-vm"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(lemdroid_fed_in_request_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) ((increase(lemdroid_fed_in_request_seconds_bucket[$__rate_interval]) / $__rate_interval)))",
           "legendFormat": "p95",
           "range": true,
           "instant": false,
