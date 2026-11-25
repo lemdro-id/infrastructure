@@ -25,7 +25,7 @@ Environment={{ e }}
 {% for e in item.env_files | default([]) %}
 EnvironmentFile={{ e }}
 {% endfor %}
-ExecStart={{ obs_root }}/bin/{{ item.bin }}{% for a in item.args %} \
+ExecStart={{ obs_root }}/bin/{{ item.bin }}{% for a in item.args if a %} \
   {{ a }}{% endfor %}
 
 {% if item.reload_hup | default(false) %}
