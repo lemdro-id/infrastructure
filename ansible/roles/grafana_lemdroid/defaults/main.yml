@@ -26,7 +26,7 @@ grafana_lemdroid_vl_plugin_version: 0.34.0
 
 # Login required. Server-wide hardening via a systemd drop-in (env overrides grafana.ini; grafana.ini untouched):
 # no anonymous access, no sign-up, no public/shared dashboards, no local snapshots (a snapshot URL is viewable
-# without login, and grafana.corvettecole.com is on the public internet), no external snapshots.
+# without login), no external snapshots. grafana.corvettecole.com is LAN/tailnet only (NPM access list).
 # Owner decision: any logged-in Grafana user may view the lemdro.id folder (Viewer and Editor roles get View).
 # Organization admins always can. There is no per-login allowlist.
 grafana_lemdroid_env:

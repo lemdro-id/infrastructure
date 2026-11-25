@@ -56,25 +56,25 @@ obs-vmauth (same allowlist), with a dedicated no-shell tunnel user.
   public dashboards, local snapshots (`GF_SNAPSHOTS_ENABLED=false`; a snapshot URL is viewable without login),
   external snapshots, and Gravatar stay off (systemd drop-in; grafana.ini untouched).
 
-### Finding: Grafana is reachable from the internet
+### Exposure: grafana.corvettecole.com is LAN/tailnet only
 
-`grafana.corvettecole.com` is reachable from the public internet (Grafana 13.3.0 login page through Nginx Proxy
-Manager), although the home docs describe it as LAN/tailnet-only. Anonymous access is off, so a Grafana login is
-required, and by owner decision any such login may view the lemdro.id dashboards. An NPM access list on that
-proxy host (LAN + tailnet ranges), or removing the public host, is recommended (NPM via its UI/API only). Until
-then, the login page is the only barrier in front of those dashboards.
+`grafana.corvettecole.com` is not publicly reachable: Nginx Proxy Manager's local access list on that proxy host
+answers 403 to requests from the internet (checked from an external fetcher, 2026-11-24). An earlier note here said
+it was public; those checks came in over the tailnet, which the access list treats as local. No NPM change is needed.
+Anonymous access stays off regardless, so a Grafana login is still required.
 
-## Needs Cole's OK (none of this is done)
+## Enable record (2026-11-24, Cole's OK)
 
-1. **Tailscale ACL**: allow CT 102 (grafana-influx) → lemdroid-ovh `tcp:8427` (and nothing broader). The tailnet
-   currently looks permissive (OVH sees all peers); if so, no change is strictly required, but an explicit grant
-   (plus tightening the default) is the recommended state.
+1. **Tailscale ACL**: explicit grant `100.86.226.112` (CT 102) -> `100.73.194.110` (lemdroid-ovh) `tcp:8427`, added
+   above the existing allow-all grant (nothing else changed). nft `obs_guard` is what actually limits `:8427` to
+   CT 102 while the allow-all grant exists.
 2. Vault: `vault_obs_grafana_vm_token`, `vault_obs_grafana_vl_token` (two different `openssl rand -hex 32`),
-   `vault_grafana_influx_read_token` (Influx: read on `lemdroid_interactions` only), `vault_grafana_admin_token`
-   (Grafana service account, Admin).
-3. Ansible SSH access to CT 102 for `grafana.yml` (not set up today), or apply the role by hand.
-4. NPM access list for `grafana.corvettecole.com` (above).
-5. Setting `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid`.
+   `vault_grafana_influx_read_token` (Influx: read on `lemdroid_interactions` only). Still open:
+   `vault_grafana_admin_token` (Grafana service account, Admin; needs a Grafana admin login). Without it the play
+   skips the API checks and the folder permission step, and the folder keeps Grafana's defaults (Viewer: view,
+   Editor: edit; provisioned dashboards can't be saved from the UI either way).
+3. Ansible SSH to CT 102 is still not set up; the Grafana role was applied by hand (same files, modes, plugin pin).
+4. `obs_grafana_access_enabled: true` and `obs_geoip_enabled: true` in `group_vars/lemdroid/vars.yml`.
 
 ## Outbound from lemdroid-ovh (only when `obs_geoip_enabled`)
 
