@@ -78,11 +78,35 @@ Anonymous access stays off regardless, so a Grafana login is still required.
 
 ## Outbound from lemdroid-ovh (only when `obs_geoip_enabled`)
 
-`obs-geoip-refresh` does two kinds of fetch, and sends no visitor data:
+`obs-geoip-refresh` fetches the databases below and sends no visitor data:
 
-1. The monthly DB-IP City Lite file from `download.db-ip.com`.
+1. The monthly DB-IP City Lite file from `download.db-ip.com` (CC BY 4.0, attribution "IP Geolocation by DB-IP",
+   https://db-ip.com).
 2. `https://www.cloudflare.com/ips-v4` and `https://www.cloudflare.com/ips-v6`, compared with the vendored list.
    A difference only sets `obs_geoip_cf_ranges_drift`; it does not change the ranges Vector uses.
+3. Only when `obs_geoip_asn_enabled` is also true: the monthly DB-IP ASN Lite file from `download.db-ip.com`
+   (CC BY 4.0, same attribution as the City database: "IP Geolocation by DB-IP", https://db-ip.com).
+
+## Datacenter ASN tagging (`obs_geoip_asn_enabled`, default **false**)
+
+Requires `obs_geoip_enabled` (the role refuses the combination otherwise). It is not set in
+`group_vars/lemdroid`, so the role default false applies, and a `--tags obs` run does not point Vector
+at the ASN database.
+
+When the flag is on, the same weekly timer installs DB-IP "IP to ASN Lite" beside the City database. Vector
+looks up the truncated `client_net` only (the network address, never the full IP) and stores `geo_asn`,
+`geo_asn_org`, and `geo_hosting`. `geo_hosting` is true when that ASN is in
+`ansible/roles/obs/files/geoip/hosting-asns.txt` (Tencent including ACEVILLE `43.160.0.0/12`, Alibaba, AWS,
+GCP, Azure/Microsoft, OVH, Hetzner, DigitalOcean, Linode/Akamai Connected Cloud, Oracle, Vultr, Contabo,
+Scaleway, Huawei Cloud). The Maps variable **Hide datacenters** defaults to on and adds `-geo_hosting:true`
+on the visitor panels. A row with no `geo_hosting` field still matches. Federation panels are not filtered.
+Panel 6 is a VictoriaMetrics rate with no `geo_hosting` label, so the variable does not apply there.
+
+Memory, only when the flag is on. The November 2026 ASN Lite mmdb is 9,648,279 bytes (9.20 MiB). Vector 0.62
+loads an mmdb via `maxminddb::Reader::open_readfile` (`fs::read` into a `Vec<u8>`, not mmap). A reload holds
+the previous table and the new one, about 18.4 MiB. obs-vector already reaches its 512M cap at startup
+(steady state about 383-400M), so the cap becomes 544M and `obs.slice` becomes MemoryHigh 1696M / MemoryMax
+1952M. The refresh unit stays at 256M: the ASN `vector test` runs only after the City test process has exited.
 
 ## Impact: what goes down
 

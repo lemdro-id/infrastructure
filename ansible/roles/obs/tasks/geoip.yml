@@ -36,6 +36,35 @@
         - {dest: cloudflare-ips.txt, content: "# vendored, role obs defaults obs_cloudflare_ips\n{{ obs_cloudflare_ips | join('\n') }}\n"}
       loop_control: {label: "{{ item.dest }}"}
 
+    - name: Hosting ASN list covers Tencent and the ACEVILLE range
+      when: obs_geoip_asn_enabled
+      vars:
+        obs_hosting_asns: >-
+          {{ lookup('ansible.builtin.file', 'geoip/hosting-asns.txt').splitlines()
+             | map('regex_replace', '\\s+#.*', '') | map('trim')
+             | reject('match', '^(#|$)') | map('int') | list }}
+      ansible.builtin.assert:
+        that:
+          - obs_hosting_asns | length >= 30
+          - 132203 in obs_hosting_asns
+          - 45090 in obs_hosting_asns
+          - 139341 in obs_hosting_asns
+        fail_msg: "hosting-asns.txt is missing a required Tencent or ACEVILLE ASN (132203, 45090, 139341)"
+        quiet: true
+
+    - name: Hosting ASN list and ASN self-test
+      when: obs_geoip_asn_enabled
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ obs_etc }}/geoip/{{ item.dest }}"
+        owner: root
+        group: "{{ obs_user }}"
+        mode: "0640"
+      loop:
+        - {src: geoip/hosting-asns.txt, dest: hosting-asns.txt}
+        - {src: geoip/selftest-asn.toml, dest: selftest-asn.toml}
+      loop_control: {label: "{{ item.dest }}"}
+
     - name: GeoIP refresh service and timer
       ansible.builtin.template:
         src: "{{ item }}.j2"
@@ -56,19 +85,33 @@
         path: "{{ obs_geoip_db }}"
       register: obs_geoip_db_stat
 
+    - name: GeoIP ASN DB present? (read-only)
+      when: obs_geoip_asn_enabled
+      ansible.builtin.stat:
+        path: "{{ obs_geoip_asn_db }}"
+      register: obs_geoip_asn_db_stat
+
     - name: Seed the GeoIP DB (download, validate with Vector, install; oneshot, waits)
       ansible.builtin.systemd_service:
         name: obs-geoip-refresh.service
         state: started
       when:
         - not ansible_check_mode
-        - not obs_geoip_db_stat.stat.exists
+        # default(false): a skipped ASN stat (flag off) must not look like a missing file
+        - not obs_geoip_db_stat.stat.exists or (obs_geoip_asn_enabled and not (obs_geoip_asn_db_stat.stat.exists | default(false)))
 
     - name: GeoIP DB must exist before Vector is pointed at it
       ansible.builtin.stat:
         path: "{{ obs_geoip_db }}"
       register: obs_geoip_db_after
       failed_when: not ansible_check_mode and not obs_geoip_db_after.stat.exists
+
+    - name: GeoIP ASN DB must exist before Vector is pointed at it
+      when: obs_geoip_asn_enabled
+      ansible.builtin.stat:
+        path: "{{ obs_geoip_asn_db }}"
+      register: obs_geoip_asn_db_after
+      failed_when: not ansible_check_mode and not obs_geoip_asn_db_after.stat.exists
 
     - name: GeoIP refresh timer enabled (weekly)
       ansible.builtin.systemd_service:

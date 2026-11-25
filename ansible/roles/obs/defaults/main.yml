@@ -94,10 +94,12 @@ obs_log_acls:
   - {dir: /var/log/postgresql, files: [/var/log/postgresql/postgresql-16-main.log]}
   - {dir: /var/log/lemdroid-nginx, files: [/var/log/lemdroid-nginx/access.json, /var/log/lemdroid-nginx/access.json.1]}
 
-# systemd units. All run as obs in obs.slice. Slice MemoryHigh/MemoryMax is 1344M/1600M with GeoIP off
-# and 1664M/1920M with GeoIP on (templates/obs.slice.j2): the sum of these per-unit MemoryMax values,
-# including obs-vmauth 64M when the gateway is on, stays under MemoryHigh. rw = extra writable paths
-# (ProtectSystem=strict everywhere).
+# systemd units. All run as obs in obs.slice. Slice MemoryHigh/MemoryMax (templates/obs.slice.j2):
+#   GeoIP off:                         1344M / 1600M  (vector 256M; per-unit sum 1232M, or 1296M with vmauth)
+#   GeoIP on, ASN off:                 1664M / 1920M  (vector 512M)
+#   GeoIP on and obs_geoip_asn_enabled: 1696M / 1952M (vector 544M)
+# The sum of these per-unit MemoryMax values, including obs-vmauth 64M when the gateway is on, stays
+# under MemoryHigh (112M of slack in both GeoIP-on tiers). rw = extra writable paths (ProtectSystem=strict).
 obs_units:
   - name: obs-victoriametrics
     bin: victoria-metrics
@@ -173,9 +175,13 @@ obs_units:
       - "--collector.textfile.directory={{ obs_data }}/textfile"
   - name: obs-vector
     bin: vector
-    # GeoIP off: 256M (live cgroup was ~185M of a 192M cap). GeoIP on: the City DB is ~125 MB in the heap
-    # and a reload briefly holds two copies, so 512M.
-    memory_max: "{{ '512M' if obs_geoip_enabled else '256M' }}"
+    # GeoIP off: 256M (live cgroup was ~185M of a 192M cap).
+    # GeoIP on: the City DB is ~125 MB in the heap and a reload briefly holds two copies, so 512M.
+    #   With that cap, steady state is ~383-400M and startup has hit 512M, so there is no spare room.
+    # GeoIP+ASN: DB-IP ASN Lite (2026-11) is 9,648,279 bytes (9.20 MiB). Vector 0.62 loads an mmdb with
+    #   maxminddb Reader::open_readfile (the file bytes in a Vec, not mmap). A reload holds both copies,
+    #   ~18.4 MiB. +32M covers that without sitting on the cap again: 544M, and the slice moves with it.
+    memory_max: "{{ '544M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('512M' if obs_geoip_enabled else '256M') }}"
     supplementary_groups: [systemd-journal]   # read the journal; NOT adm, NOT docker
     rw: ["{{ obs_data }}/vector"]
     env: ["VECTOR_LOG=warn"]
@@ -271,6 +277,15 @@ obs_geoip_enabled: false
 obs_geoip_dir: "{{ obs_data }}/geoip"
 obs_geoip_db: "{{ obs_geoip_dir }}/dbip-city-lite.mmdb"
 obs_geoip_url_template: "https://download.db-ip.com/free/dbip-city-lite-{month}.mmdb.gz"
+# Datacenter tagging. Requires obs_geoip_enabled (the role asserts that). Default false: rendered Vector
+# config, obs.slice, the vector unit and the GeoIP timer/service stay byte-identical to GeoIP-on without
+# this flag. When true, the same weekly refresh also installs DB-IP "IP to ASN Lite" (CC BY 4.0, attribution
+# "IP Geolocation by DB-IP", https://db-ip.com, alongside the City database). Lookup is the truncated
+# client_net only. Stored: geo_asn (number), geo_asn_org, geo_hosting (true when the ASN is in
+# files/geoip/hosting-asns.txt).
+obs_geoip_asn_enabled: false
+obs_geoip_asn_db: "{{ obs_geoip_dir }}/dbip-asn-lite.mmdb"
+obs_geoip_asn_url_template: "https://download.db-ip.com/free/dbip-asn-lite-{month}.mmdb.gz"
 # Cloudflare ranges (vendored from https://www.cloudflare.com/ips-v4 and /ips-v6, 2026-11-24). Networks inside them
 # get geo_cdn=cloudflare (a federation peer egressing via Cloudflare is grouped as "CDN", not placed on the map).
 # When GeoIP is on, obs-geoip-refresh GETs those two URLs weekly (the second outbound fetch, after the DB-IP

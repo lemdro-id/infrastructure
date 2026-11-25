@@ -192,6 +192,10 @@
 - name: GeoIP off -> remove its timer, DB and geo.vrl (after Vector runs the plain config)
   ansible.builtin.include_tasks: geoip_off.yml
 
+- name: ASN enrichment off -> remove its database and list (city GeoIP stays)
+  ansible.builtin.include_tasks: geoip_asn_off.yml
+  when: obs_geoip_enabled and not obs_geoip_asn_enabled
+
 - name: Interactions timer enabled (hourly at :07 UTC; the service itself is a oneshot)
   ansible.builtin.systemd_service:
     name: obs-interactions.timer

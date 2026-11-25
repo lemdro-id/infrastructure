@@ -35,3 +35,32 @@ if is_ipv4(addr) || is_ipv6(addr) {
     }
   }
 }
+{% if obs_geoip_asn_enabled %}
+
+# ASN (obs_geoip_asn_enabled). Same addr as above: the network address of client_net, never .client_ip.
+# geo_hosting is always set, so a row from this build is not "missing". false = not in the hosting list,
+# or the ASN database had no record. geo_asn / geo_asn_org only when the database has them.
+{% set ns = namespace(asns=[]) %}
+{% for raw in lookup('ansible.builtin.file', 'geoip/hosting-asns.txt').splitlines() %}
+{% set line = raw.split('#', 1)[0].strip() %}
+{% if line %}
+{% set _ = ns.asns.append(line | int) %}
+{% endif %}
+{% endfor %}
+hosting_asns = [{{ ns.asns | unique | sort | join(', ') }}]
+.geo_hosting = false
+if is_ipv4(addr) || is_ipv6(addr) {
+  asrec, aserr = get_enrichment_table_record("geoip_asn", {"ip": addr})
+  if aserr == null {
+    asn, asn_err = to_int(asrec.autonomous_system_number)
+    if asn_err == null && asn > 0 {
+      .geo_asn = asn
+      org = string(asrec.autonomous_system_organization) ?? ""
+      if org != "" {
+        .geo_asn_org = truncate(org, 128)
+      }
+      .geo_hosting = includes(hosting_asns, asn)
+    }
+  }
+}
+{% endif %}

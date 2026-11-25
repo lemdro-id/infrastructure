@@ -4,15 +4,18 @@
 Weekly (obs-geoip-refresh.timer). Stdlib only. Runs as uid obs; the only privileged step is the unit's
 ExecStartPost (+), which reloads obs-vector (SIGHUP) when this run installed a new file.
 
-  1. Pick the newest monthly release (this month, else last month). Skip the download if it is already installed.
+  1. Pick the newest monthly City release (this month, else last month). Skip the download if it is already installed.
   2. Download the .mmdb.gz (size-capped), gunzip (size-capped), check the MaxMind metadata says DBIP-City,
      then run `vector test` with the candidate (same binary and lookup shape as production).
   3. Atomic install: live -> .prev, candidate -> live; write state.json; touch .changed for the reload.
-  4. Compare the vendored Cloudflare ranges (rendered by Ansible) with https://www.cloudflare.com/ips-v4|v6.
+  4. If OBS_GEOIP_ASN_URL_TEMPLATE is set (obs_geoip_asn_enabled): the same steps for DB-IP "IP to ASN Lite"
+     (CC BY 4.0) into dbip-asn-lite.mmdb. Unset, this step does not run and the City path is unchanged.
+  5. Compare the vendored Cloudflare ranges (rendered by Ansible) with https://www.cloudflare.com/ips-v4|v6.
      A difference only sets obs_geoip_cf_ranges_drift=1 (the fix is a PR to obs_cloudflare_ips).
 Never replaces a good database with a bad one: any failure leaves the live file untouched and exits non-zero.
 Nothing here sends client data anywhere. Outbound requests are the DB-IP City Lite file from
-download.db-ip.com, then https://www.cloudflare.com/ips-v4 and /ips-v6 for the CDN-range drift check.
+download.db-ip.com, the ASN Lite file from the same host when step 4 is enabled, then
+https://www.cloudflare.com/ips-v4 and /ips-v6 for the CDN-range drift check.
 Health -> node_exporter textfile dir -> VictoriaMetrics (obs_geoip_*).
 """
 import datetime as dt
@@ -39,6 +42,15 @@ TEXTFILE = os.environ.get("OBS_TEXTFILE", "/var/lib/obs/textfile/obs_geoip.prom"
 MAX_GZ = 150 * 1024 * 1024
 MAX_RAW = 400 * 1024 * 1024
 MIN_RAW = 50 * 1024 * 1024
+# Set only when obs_geoip_asn_enabled renders them onto the unit. Empty = City-only, as before.
+ASN_URL_TEMPLATE = os.environ.get("OBS_GEOIP_ASN_URL_TEMPLATE", "")
+ASN_LIVE = os.path.join(GEO_DIR, "dbip-asn-lite.mmdb")
+ASN_STATE = os.path.join(GEO_DIR, "asn-state.json")
+ASN_SELFTEST = os.environ.get("OBS_GEOIP_ASN_SELFTEST", "")
+# November 2026 DB-IP ASN Lite is 9,648,279 bytes (gz 5,237,630). Caps leave room to grow.
+ASN_MAX_GZ = 40 * 1024 * 1024
+ASN_MAX_RAW = 80 * 1024 * 1024
+ASN_MIN_RAW = 1 * 1024 * 1024
 UA = "lemdroid-obs-geoip/1 (+https://lemdro.id)"
 
 
@@ -76,17 +88,32 @@ def mmdb_metadata(path):
     j = meta.find(b"database_type")
     if j < 0:
         raise ValueError("no database_type in metadata")
-    # value is a short UTF-8 string (control byte 0x40|len) right after the key
+    # Top 3 bits are the type (2 = string). The low 5 bits are the length when they are < 29
+    # (DBIP-City* uses this). 29 means one extra length byte, which DBIP-ASN-Lite needs.
     ctrl = meta[j + 13]
     if ctrl >> 5 != 2:
         raise ValueError("unexpected database_type encoding")
     n = ctrl & 0x1F
-    dbtype = meta[j + 14:j + 14 + n].decode("utf-8", "replace")
+    start = j + 14
+    # Payload size < 29 is the whole length (DBIP-City* takes this path, unchanged). 29/30 are MaxMind's
+    # extended sizes; DBIP-ASN-Lite's database_type is 35 bytes (size code 29 plus one length byte).
+    if n >= 29:
+        if n == 29:
+            n = 29 + meta[start]
+            start += 1
+        elif n == 30:
+            n = 285 + (meta[start] << 8) + meta[start + 1]
+            start += 2
+        else:
+            raise ValueError("unexpected database_type length")
+        if n > 256:
+            raise ValueError("database_type longer than expected")
+    dbtype = meta[start:start + n].decode("utf-8", "replace")
     return dbtype
 
 
-def selftest(candidate):
-    with open(SELFTEST) as f:
+def selftest(candidate, cfg_path=None):
+    with open(cfg_path or SELFTEST) as f:
         cfg = f.read().replace("@CANDIDATE@", candidate)
     with tempfile.NamedTemporaryFile("w", suffix=".toml", dir=GEO_DIR, delete=False) as t:
         t.write(cfg)
@@ -117,6 +144,92 @@ def cf_drift():
     except Exception as e:  # noqa: BLE001 - a failed check is reported, never fatal
         print(f"cloudflare ranges check failed: {e}", file=sys.stderr)
         return -1
+
+
+def refresh_asn(stats):
+    """Install DB-IP ASN Lite next to the City DB. A bad candidate never replaces a good file."""
+    stats["asn_refresh_ok"] = 0
+    if not ASN_SELFTEST:
+        print("ASN: OBS_GEOIP_ASN_SELFTEST is unset", file=sys.stderr)
+        return False
+    state = {}
+    if os.path.exists(ASN_STATE):
+        try:
+            with open(ASN_STATE) as f:
+                state = json.load(f)
+        except (OSError, ValueError):
+            state = {}
+    ok = False
+    try:
+        today = dt.datetime.now(dt.timezone.utc).date()
+        first = today.replace(day=1)
+        months = [first.strftime("%Y-%m"), (first - dt.timedelta(days=1)).strftime("%Y-%m")]
+        if state.get("month") in months[:1] and os.path.exists(ASN_LIVE):
+            print(f"asn db {state['month']} already installed")
+            ok = True
+        else:
+            last_err = None
+            for month in months:
+                if state.get("month") == month and os.path.exists(ASN_LIVE):
+                    print(f"asn db {month} already installed (newer month not published yet)")
+                    ok = True
+                    break
+                url = ASN_URL_TEMPLATE.format(month=month)
+                gz = os.path.join(GEO_DIR, f".asn-dl-{month}.mmdb.gz")
+                cand = os.path.join(GEO_DIR, f".asn-candidate-{month}.mmdb")
+                try:
+                    fetch(url, ASN_MAX_GZ, dest=gz)
+                    h = hashlib.sha256()
+                    n = 0
+                    with gzip.open(gz, "rb") as src, open(cand, "wb") as dst:
+                        while True:
+                            chunk = src.read(1 << 20)
+                            if not chunk:
+                                break
+                            n += len(chunk)
+                            if n > ASN_MAX_RAW:
+                                raise ValueError("uncompressed asn db too large")
+                            h.update(chunk)
+                            dst.write(chunk)
+                    if n < ASN_MIN_RAW:
+                        raise ValueError(f"uncompressed asn db too small ({n} bytes)")
+                    dbtype = mmdb_metadata(cand)
+                    if not dbtype.startswith("DBIP-ASN"):
+                        raise ValueError(f"unexpected database_type {dbtype!r}")
+                    selftest(cand, ASN_SELFTEST)
+                    if os.path.exists(ASN_LIVE):
+                        shutil.copy2(ASN_LIVE, ASN_LIVE + ".prev")
+                    os.replace(cand, ASN_LIVE)
+                    os.chmod(ASN_LIVE, 0o640)
+                    state = {"month": month, "sha256": h.hexdigest(), "bytes": n, "database_type": dbtype,
+                             "installed_at": int(time.time()), "source": url,
+                             "licence": "CC BY 4.0, IP Geolocation by DB-IP (https://db-ip.com)"}
+                    with open(ASN_STATE + ".tmp", "w") as f:
+                        json.dump(state, f)
+                    os.replace(ASN_STATE + ".tmp", ASN_STATE)
+                    open(CHANGED, "w").close()
+                    print(f"installed asn {month} ({n} bytes, {dbtype}, sha256 {h.hexdigest()[:16]}...)")
+                    ok = True
+                    break
+                except Exception as e:  # noqa: BLE001 - try the previous month, then fail
+                    last_err = e
+                    print(f"asn {month}: {e}", file=sys.stderr)
+                finally:
+                    for p in (gz, cand):
+                        if os.path.exists(p):
+                            os.unlink(p)
+            if not ok:
+                raise RuntimeError(f"no usable asn release: {last_err}")
+    except Exception as e:  # noqa: BLE001
+        print(f"ASN FAILED: {e}", file=sys.stderr)
+        ok = False
+    if ok:
+        stats["asn_refresh_ok"] = 1
+        stats["asn_last_success_timestamp_seconds"] = int(time.time())
+    if os.path.exists(ASN_LIVE):
+        installed = state.get("installed_at", os.path.getmtime(ASN_LIVE))
+        stats["asn_db_installed_timestamp_seconds"] = int(installed)
+    return ok
 
 
 def write_textfile(stats):
@@ -205,12 +318,13 @@ def main():
         stats["last_success_timestamp_seconds"] = int(time.time())
     if os.path.exists(LIVE):
         stats["db_installed_timestamp_seconds"] = int(state.get("installed_at", os.path.getmtime(LIVE)))
+    asn_ok = refresh_asn(stats) if ASN_URL_TEMPLATE else True
     stats["cf_ranges_drift"] = cf_drift()
     try:
         write_textfile(stats)
     except OSError as e:
         print(f"textfile: {e}", file=sys.stderr)
-    return 0 if ok else 1
+    return 0 if ok and asn_ok else 1
 
 
 if __name__ == "__main__":

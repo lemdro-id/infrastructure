@@ -564,7 +564,8 @@ def maps():
     b = Board("lemdroid-maps", "lemdro.id · Maps (visitors and federation)", ["lemdro.id", "maps"],
               time_from="now-6h", refresh="5m",
               desc="Offline GeoIP of the truncated client network (/24, /48) only, done in Vector on lemdroid-ovh "
-                   "with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). " + DBIP)
+                   "with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). " + DBIP +
+                   " Datacenter tagging uses DB-IP Lite ASN, CC BY 4.0, same attribution.")
     b.vars = [
         {"type": "custom", "name": "ua", "label": "Visitors", "multi": True, "includeAll": False, "hide": 0,
          "query": "browser,app,other,bot_or_tool,none",
@@ -572,10 +573,24 @@ def maps():
          "options": [{"text": x, "value": x, "selected": x in ("browser", "app")}
                      for x in ("browser", "app", "other", "bot_or_tool", "none")],
          "description": "User-agent class (federation servers are on the federation map, not here)."},
+        # Grafana parses "text : value" on " : " (spaces), so the colon in -geo_hosting:true stays in the value.
+        # Off is LogsQL "*", which matches every row. On is a negation, so a missing geo_hosting still matches.
+        {"type": "custom", "name": "hide_datacenters", "label": "Hide datacenters",
+         "multi": False, "includeAll": False, "hide": 0,
+         "query": "on : -geo_hosting:true,off : *",
+         "current": {"text": "on", "value": "-geo_hosting:true", "selected": True},
+         "options": [
+             {"text": "on", "value": "-geo_hosting:true", "selected": True},
+             {"text": "off", "value": "*", "selected": False},
+         ],
+         "description": "On drops visitor rows with geo_hosting true (datacenter/cloud ASN). "
+                        "A row with no geo_hosting field, logged before ASN enrichment, still shows. "
+                        "Federation panels are not filtered."},
     ]
     # geo_country:* drops rows from before GeoIP (no geo fields). stats by (geo_country) otherwise keeps an
     # empty group, which Grafana legends with the query text.
-    vis = 'source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare'
+    # ${hide_datacenters} is "-geo_hosting:true" or "*". Negation keeps a missing field.
+    vis = 'source:nginx ${hide_datacenters} ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare'
     latlon = ("geo_lat", "geo_lon")
     b.row("Visitors")
     b.add([
@@ -585,7 +600,8 @@ def maps():
             [geo_layer("Countries", None, "requests", "blue", "country", max_size=40)], w=12,
             transformations=vl_tx(),
             desc="Excludes federation (inbox), health checks and Cloudflare-egress networks (WARP/Workers). "
-                 "Tooltip shows distinct /24 (or /48) networks too. " + DBIP),
+                 "Hide datacenters (default on) also drops geo_hosting true; a row with no geo_hosting field "
+                 "still shows. Tooltip shows distinct /24 (or /48) networks too. " + DBIP),
         geomap("Visitors by city (top 1000 cities)", [
             t_vl(f'{vis} geo_lat:* | stats by (geo_country, geo_city, geo_lat, geo_lon) count() requests '
                  '| sort by (requests desc) | limit 1000', "stats")],
@@ -612,7 +628,9 @@ def maps():
             '[$__rate_interval])))', "{{geo_country}}")], w=8, unit="reqps", stack=True,
            desc="VictoriaMetrics lemdroid_nginx_requests_by_geo_total is labeled only by geo_country and ua_class. "
                 "This panel counts every request in the selected user-agent classes, including federation inbox, "
-                "health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ."),
+                "health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ. "
+                "Hide datacenters does not apply: this counter has no geo_hosting label, so datacenter "
+                "networks stay in the rate."),
     ], 10)
 
     fed = 'source:nginx route_class:inbox'
@@ -642,6 +660,7 @@ def maps():
     ], 9)
     b.add([text("Geolocation is approximate (city at best, often only country) and comes from an offline "
                  "database on lemdroid-ovh; no lookup service is ever called. " + DBIP +
+                 " Datacenter tagging uses DB-IP Lite ASN, CC BY 4.0, same attribution."
                  " Basemap tiles are loaded by your browser from the Grafana default tile provider.", w=24)], 2)
     return b
 

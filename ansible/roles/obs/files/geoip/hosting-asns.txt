@@ -1,0 +1,130 @@
+# Datacenter / cloud ASNs. Vector sets geo_hosting=true when the truncated client_net's ASN is listed here.
+# One ASN per line. Blank lines and lines whose first non-whitespace character is # are ignored.
+# A trailing " #" comment is also ignored. The role renders these numbers into geo.vrl; the copy of this
+# file under /etc/obs/geoip is for inspection. Edit this file and re-apply --tags obs.
+#
+# Checked 2026-11-25. Holder names are RIPEstat as-overview
+# (https://stat.ripe.net/data/as-overview/data.json?resource=AS<n>). A sample announced prefix
+# (RIPEstat announced-prefixes) was then looked up in DB-IP ASN Lite 2026-11, which is the database
+# Vector reads; the ASN below is the number that lookup returned. Not guessed.
+#
+# Checked and not listed, so they are not re-added by mistake:
+#   AS139070  Google Asia Pacific, not Tencent.
+#   AS58461   CT-HangZhou-IDC, not Tencent.
+#   AS35540   OVH-TELECOM (broadband), not the OVH datacenter AS.
+#   AS47846   SEDO, not Hetzner.  AS400328 / AS40819 are not Microsoft.
+#   AS63293   Facebook, not Oracle.  AS200351 is not Vultr.
+#   AS135629  Ningxia West Cloud Data, not named Alibaba in RIPEstat or DB-IP.
+#   AS34947   Alibaba Travel Company, a different organisation.
+#   AS20940, AS16625  Akamai CDN edge, not Linode / Akamai Connected Cloud.
+#   AS19527   GOOGLE-2 announces some GCP prefixes that this DB-IP release labels AS15169.
+#   AS36492 GOOGLEWIFI and AS36040 YOUTUBE are not GCP customer egress.
+
+# --- Tencent, including ACEVILLE PTE. LTD. 43.160.0.0/12 ---
+# 132203 TENCENT-NET-AP-CN - Tencent Building, Kejizhongyi Avenue.
+#   prefix-overview 43.160.0.0/18 origin AS132203. DB-IP 43.160.0.0 -> 132203
+#   (org string in that DB: Shenzhen Tencent Computer Systems Company Limited).
+132203
+# 45090 TENCENT-NET-AP - Shenzhen Tencent Computer Systems Company Limited.
+#   DB-IP 203.195.128.0 and 123.207.8.0 -> 45090.
+45090
+# 133478 TENCENT-AS-AP - Tencent Cloud Computing (Beijing) Co., Ltd. DB-IP 142.86.253.0 -> 133478.
+133478
+# 139341 ACE-AS-AP. RDAP registrant ORG-AP2-AP fn "ACEVILLE PTE.LTD." (https://rdap.apnic.net/autnum/139341).
+#   Announces 43.170.39.0/24 inside 43.160.0.0/12. DB-IP 43.170.39.0 and 43.175.255.0 -> 139341, org ACEVILLE PTE.LTD.
+139341
+
+# --- Alibaba ---
+# 45102 ALIBABA-CN-NET - Alibaba (US) Technology Co., Ltd. DB-IP 47.74.0.0 -> 45102.
+45102
+# 37963 ALIBABA-CN-NET - Hangzhou Alibaba Advertising Co.,Ltd. DB-IP 8.134.0.0 -> 37963.
+37963
+# 134963 ASEPL-AS-AP - Alibaba Cloud (Singapore) Private Limited. DB-IP 170.33.13.0 -> 134963.
+134963
+# 24429 Taobao - Zhejiang Taobao Network Co.,Ltd. DB-IP 47.246.23.0 -> 24429.
+24429
+
+# --- AWS / Amazon ---
+# 16509 AMAZON-02 - Amazon.com, Inc. DB-IP 54.0.0.0 -> 16509.
+16509
+# 14618 AMAZON-AES - Amazon.com, Inc. DB-IP 3.5.0.0 -> 14618.
+14618
+# 7224 AMAZON-AS - Amazon.com, Inc. DB-IP 46.51.212.0 -> 7224.
+7224
+# 8987 GOVCLOUD - Amazon. DB-IP 63.249.220.0 -> 8987 (org string: Amazon Data Services Ireland Ltd).
+8987
+
+# --- GCP / Google ---
+# 15169 GOOGLE - Google LLC. DB-IP 8.8.8.0 and 34.0.0.0 -> 15169. Also the label this DB puts on
+#   34.1.144.0/20 and 57.140.240.0/24, which BGP originates from AS19527.
+15169
+# 396982 GOOGLE-CLOUD-PLATFORM - Google LLC. DB-IP 35.184.0.0 -> 396982.
+396982
+# 139190 GOOGLE-AS-AP - Google Asia Pacific Pte. Ltd. Announces 34.101.0.0/16. DB-IP 34.101.0.0 -> 139190.
+139190
+# 394089 GCP-ENTERPRISE-USER-TRAFFIC - Google LLC. DB-IP 134.231.192.0 -> 394089.
+394089
+
+# --- Azure / Microsoft ---
+# 8075 MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation. DB-IP 20.0.0.0, 13.64.0.0, 20.190.0.0 -> 8075.
+8075
+# 8068 MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation. DB-IP 52.113.194.0 -> 8068.
+8068
+# 8069 MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation. DB-IP 20.33.144.0 -> 8069.
+8069
+# 8070 MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation. DB-IP 165.159.132.0 -> 8070.
+8070
+# 12076 MICROSOFT - Microsoft Corporation. DB-IP 151.207.44.0 -> 12076.
+12076
+# 3598 MICROSOFT-CORP-AS - Microsoft Corporation. DB-IP 167.220.204.0 -> 3598.
+3598
+
+# --- OVH (datacenter AS only; OVH-TELECOM AS35540 is not listed) ---
+# 16276 OVH - OVH SAS. DB-IP 51.75.0.0 -> 16276.
+16276
+
+# --- Hetzner ---
+# 24940 HETZNER-AS - Hetzner Online GmbH. DB-IP 168.119.0.0 -> 24940.
+24940
+# 213230 HETZNER-CLOUD2-AS - Hetzner Online GmbH. DB-IP 5.161.189.0 -> 213230.
+213230
+# 212317 HETZNER-CLOUD3-AS - Hetzner Online GmbH. DB-IP 5.78.17.0 -> 212317.
+212317
+
+# --- DigitalOcean ---
+# 14061 DIGITALOCEAN-ASN - DigitalOcean, LLC. DB-IP 104.131.0.0 -> 14061.
+14061
+# 393406 DIGITALOCEAN-AS393406 - DigitalOcean, LLC. DB-IP 64.204.146.0 -> 393406.
+393406
+
+# --- Linode / Akamai Connected Cloud (not the Akamai CDN ASNs) ---
+# 63949 AKAMAI-LINODE-AP - Akamai Connected Cloud. DB-IP 45.33.0.0 -> 63949
+#   (org string in that DB: Akamai Technologies, Inc.).
+63949
+
+# --- Oracle Cloud ---
+# 31898 ORACLE-BMC-31898 - Oracle Corporation. DB-IP 129.146.0.0, 150.136.0.0 -> 31898.
+31898
+
+# --- Vultr ---
+# 20473 AS-VULTR - The Constant Company, LLC. DB-IP 45.32.0.0 -> 20473.
+20473
+
+# --- Contabo ---
+# 51167 CONTABO - Contabo GmbH. DB-IP 173.249.0.0 -> 51167.
+51167
+# 40021 CONTABO-40021 - Contabo Inc. DB-IP 185.187.235.0 -> 40021.
+40021
+# 141995 CAPL-AS-AP - Contabo Asia Private Limited. DB-IP 154.26.128.0 -> 141995.
+141995
+
+# --- Scaleway ---
+# 12876 AS12876 - Scaleway SAS. DB-IP 51.15.0.0 -> 12876.
+12876
+
+# --- Huawei Cloud ---
+# 136907 HWCLOUDS-AS-AP - HUAWEI CLOUDS. DB-IP 119.8.0.0 -> 136907
+#   (org string: HUAWEI INTERNATIONAL PTE. LTD.).
+136907
+# 55990 HWCSNET - Huawei Cloud Service data center. DB-IP 1.94.0.0 -> 55990.
+55990
