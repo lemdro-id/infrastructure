@@ -1,0 +1,52 @@
+# obs-geoip-refresh self-test: loads a CANDIDATE mmdb with the same Vector binary and the same lookup shape as
+# production before it replaces the live file. The script runs `vector test` on a temp copy with @CANDIDATE@
+# replaced by the candidate's path.
+[enrichment_tables.geoip]
+type = "mmdb"
+path = "@CANDIDATE@"
+
+[sources.none]
+type = "demo_logs"
+format = "shuffle"
+lines = ["x"]
+count = 1
+
+[transforms.lookup]
+type = "remap"
+inputs = ["none"]
+source = '''
+rec, err = get_enrichment_table_record("geoip", {"ip": string!(.addr)})
+if err == null {
+  .cc = rec.country.iso_code
+  .lat = rec.location.latitude
+}
+'''
+
+[sinks.none]
+type = "blackhole"
+inputs = ["lookup"]
+
+[[tests]]
+name = "candidate mmdb resolves well-known networks to a country and coordinates"
+[[tests.inputs]]
+insert_at = "lookup"
+type = "log"
+log_fields.addr = "8.8.8.0"
+[[tests.outputs]]
+extract_from = "lookup"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''assert_eq!(.cc, "US")
+assert!(is_float(.lat))'''
+
+[[tests]]
+name = "candidate mmdb resolves IPv6"
+[[tests.inputs]]
+insert_at = "lookup"
+type = "log"
+log_fields.addr = "2001:4860:4860::"
+[[tests.outputs]]
+extract_from = "lookup"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''assert!(match(string!(.cc), r'^[A-Z]{2}$'))'''

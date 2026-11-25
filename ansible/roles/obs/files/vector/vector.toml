@@ -185,9 +185,11 @@ name = "redaction_dropped_total"
 namespace = "lemdroid_obs"
 
 # ---------------- sinks (all 127.0.0.1) ----------------
+# nginx_out is defined in nginx-out.toml (loaded with a second --config): a pass-through by default, or the P2
+# GeoIP enrichment (geo_* fields from the truncated client_net only) when obs_geoip_enabled.
 [sinks.vl_main]
 type = "http"
-inputs = ["nginx_main", "pg_parse", "journal_shape"]
+inputs = ["nginx_out", "pg_parse", "journal_shape"]
 uri = "http://127.0.0.1:9428/insert/jsonline?_stream_fields=source,kind,unit&_msg_field=message&_time_field=timestamp"
 method = "post"
 encoding.codec = "json"

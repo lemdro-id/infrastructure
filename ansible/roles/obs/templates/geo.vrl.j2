@@ -1,0 +1,37 @@
+# {{ ansible_managed }} (role obs). P2 GeoIP on the TRUNCATED network only.
+# Runs after nginx_main, so .client_ip (the full address) is already gone; the lookup key is the network address
+# of .client_net (a.b.c.0 for /24, x:y:z:: for /48). Offline mmdb (enrichment table "geoip"), no network calls.
+# Adds:  geo_country  ISO 3166 alpha-2, "ZZ" = unknown (always set; bounded metric label)
+#        geo_region, geo_city   names from the DB (<= 64 chars), only if known
+#        geo_lat, geo_lon       the DB's city centroid rounded to 0.1 deg (~11 km); never finer than the city
+#        geo_cdn="cloudflare"   the network is inside Cloudflare's published ranges (maps group these as "CDN")
+.geo_country = "ZZ"
+net = string(.client_net) ?? ""
+addr = string(split(net, "/")[0]) ?? ""
+if is_ipv4(addr) || is_ipv6(addr) {
+  cdn, err = ip_cidr_contains({{ obs_cloudflare_ips | to_json }}, addr)
+  if err == null && cdn {
+    .geo_cdn = "cloudflare"
+  }
+  rec, err = get_enrichment_table_record("geoip", {"ip": addr})
+  if err == null {
+    cc = upcase(string(rec.country.iso_code) ?? "")
+    if match(cc, r'^[A-Z]{2}$') {
+      .geo_country = cc
+    }
+    region = string(rec.subdivisions[0].names.en) ?? ""
+    if region != "" {
+      .geo_region = truncate(region, 64)
+    }
+    city = string(rec.city.names.en) ?? ""
+    if city != "" {
+      .geo_city = truncate(city, 64)
+    }
+    lat, lat_err = to_float(rec.location.latitude)
+    lon, lon_err = to_float(rec.location.longitude)
+    if lat_err == null && lon_err == null && city != "" {
+      .geo_lat = round(lat, precision: 1)
+      .geo_lon = round(lon, precision: 1)
+    }
+  }
+}

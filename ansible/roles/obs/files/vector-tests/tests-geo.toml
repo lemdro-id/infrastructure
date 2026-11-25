@@ -1,0 +1,62 @@
+# Runs with nginx-out.toml = the GeoIP variant (obs_geoip_enabled=true) and a real DB-IP City Lite mmdb.
+# Fixtures avoid city/coordinate values (they move between monthly DB releases); they pin the privacy contract.
+[[tests]]
+name = "geo: lookup on the /24 only, city-level fields, no full IP, bounded keys"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.103","request_id":"g1","cf_ray":"","cf_country":"US","client_ip":"8.8.8.77","host":"lemdro.id","method":"GET","request_uri":"/post/1","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"100","request_time":"0.010","upstream":"127.0.0.1:1234","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_out"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_net, "8.8.8.0/24")
+assert!(!exists(.client_ip))
+assert!(!contains(encode_json(.), "8.8.8.77"))
+assert_eq!(.geo_country, "US")
+assert!(is_string(.geo_city))
+assert!(!exists(.geo_cdn))
+# 0.1 deg grid: one decimal at most
+assert!(match(to_string!(.geo_lat), r'^-?\d+(\.\d)?$'))
+assert!(match(to_string!(.geo_lon), r'^-?\d+(\.\d)?$'))
+geo_keys = filter(keys(.)) -> |_i, k| { starts_with(k, "geo_") }
+for_each(geo_keys) -> |_i, k| {
+  assert!(includes(["geo_country", "geo_region", "geo_city", "geo_lat", "geo_lon", "geo_cdn"], k))
+}
+true
+'''
+
+[[tests]]
+name = "geo: Cloudflare egress network is tagged cdn (IPv6 /48)"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.200","request_id":"g2","cf_ray":"","cf_country":"","client_ip":"2606:4700:10:1::5","host":"lemdro.id","method":"POST","request_uri":"/inbox","proto":"HTTP/1.1","status":"202","bytes":"0","request_length":"2000","request_time":"0.020","upstream":"127.0.0.1:8080","upstream_status":"202","upstream_connect_time":"0.000","upstream_header_time":"0.020","upstream_response_time":"0.020","proxpass":"lemmy","cache":"","ua":"Lemmy/0.19.21; +https://example.social","sig_host":"example.social","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_out"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_net, "2606:4700:10::/48")
+assert_eq!(.geo_cdn, "cloudflare")
+assert_eq!(.sig_host, "example.social")
+assert!(!contains(encode_json(.), "2606:4700:10:1::5"))
+'''
+
+[[tests]]
+name = "geo: unknown / documentation network -> ZZ, nothing else"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.300","request_id":"g3","cf_ray":"","cf_country":"","client_ip":"","host":"lemdro.id","method":"GET","request_uri":"/","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"100","request_time":"0.010","upstream":"127.0.0.1:1234","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy-ui","cache":"","ua":"curl/8","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_out"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.client_net, "invalid")
+assert_eq!(.geo_country, "ZZ")
+assert!(!exists(.geo_city))
+assert!(!exists(.geo_lat))
+'''

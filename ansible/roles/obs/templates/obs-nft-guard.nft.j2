@@ -9,4 +9,14 @@ table inet obs_guard {
     type filter hook output priority filter; policy accept;
     oifname "lo" tcp dport { {{ obs_ports.victorialogs }}, {{ obs_ports.vl_ip }} } meta skuid != "{{ obs_user }}" counter reject with tcp reset
   }
+{% if obs_grafana_access_enabled %}
+  # P2: the Grafana gateway (obs-vmauth, {{ obs_grafana_listen_ip }}:{{ obs_grafana_port }}) answers CT 102 only. Runs before
+  # `table inet filter` (which accepts all of tailscale0): a drop here is final whatever that table says.
+  # Covers every interface, so local processes (incl. host-network containers) can't use it either.
+  chain input {
+    type filter hook input priority filter - 10; policy accept;
+    tcp dport {{ obs_grafana_port }} ip saddr != {{ obs_grafana_peer_ip }} counter drop
+    tcp dport {{ obs_grafana_port }} meta nfproto ipv6 counter drop
+  }
+{% endif %}
 }

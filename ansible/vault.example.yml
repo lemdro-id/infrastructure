@@ -34,3 +34,13 @@ vault_influx_telegraf_token: ""
 # obs interactions rollup (role obs): Influx 2 token with write on bucket `lemdroid_interactions` only (org `home`,
 # CT 102). Empty = the hourly job still runs but writes nothing to Influx (query + health metrics only).
 vault_obs_influx_interactions_token: ""
+
+# obs plan P2 (Grafana on CT 102 reading lemdroid-ovh; docs/grafana-access.md). Two different random tokens, >= 32 chars
+# (e.g. `openssl rand -hex 32`). The same vault vars feed obs-vmauth on lemdroid-ovh and the datasources on CT 102.
+# Empty = gateway not provisioned (obs_grafana_access_enabled must stay false), dashboards for VM/VL not installed.
+vault_obs_grafana_vm_token: ""             # Grafana -> obs-vmauth -> VictoriaMetrics (read-only paths)
+vault_obs_grafana_vl_token: ""             # Grafana -> obs-vmauth -> VictoriaLogs 9428 (read-only paths, never 9429)
+# CT 102: Influx 2 token with READ on bucket `lemdroid_interactions` only (org `home`). Used by the Grafana datasource.
+vault_grafana_influx_read_token: ""
+# CT 102: Grafana service-account token (role Admin) for the play's API checks (folder permissions, org users).
+vault_grafana_admin_token: ""

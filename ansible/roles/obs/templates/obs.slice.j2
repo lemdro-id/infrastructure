@@ -1,0 +1,13 @@
+# {{ ansible_managed }} (role obs). lemdro.id observability stack: every obs-* unit runs here (PLAN §10).
+# Hard cap 1.5 GiB for the whole stack; 1.875 GiB with P2 GeoIP on (Vector holds the ~125 MB City DB, two copies
+# for a moment during a reload).
+[Unit]
+Description=lemdro.id observability stack
+Before=slices.target
+
+[Slice]
+MemoryAccounting=true
+MemoryHigh={{ '1664M' if obs_geoip_enabled else '1280M' }}
+MemoryMax={{ '1920M' if obs_geoip_enabled else '1536M' }}
+CPUWeight=20
+IOWeight=20

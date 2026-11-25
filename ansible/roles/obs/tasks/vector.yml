@@ -14,13 +14,60 @@
     - {src: vector/journal.vrl, dest: journal.vrl}
     - {src: vector-tests/tests.toml, dest: tests.toml}
   loop_control: {label: "{{ item.dest }}"}
-  register: obs_cfg_vector
+  register: obs_cfg_vector_main
+
+# P2: nginx_out (what VictoriaLogs stores for nginx) = pass-through, or GeoIP-enriched when obs_geoip_enabled.
+# Same file name either way (second --config on the unit), plus the matching unit tests as tests-out.toml.
+- name: nginx-out.toml, plain (GeoIP off)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ obs_etc }}/vector/{{ item.dest }}"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  loop:
+    - {src: vector/nginx-out-plain.toml, dest: nginx-out.toml}
+    - {src: vector-tests/tests-out-plain.toml, dest: tests-out.toml}
+  loop_control: {label: "{{ item.dest }}"}
+  register: obs_cfg_vector_plain
+  when: not obs_geoip_enabled
+
+- name: nginx-out.toml + geo.vrl, GeoIP variant
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ obs_etc }}/vector/{{ item.dest }}"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  loop:
+    - {src: vector-nginx-out-geo.toml.j2, dest: nginx-out.toml}
+    - {src: geo.vrl.j2, dest: geo.vrl}
+  loop_control: {label: "{{ item.dest }}"}
+  register: obs_cfg_vector_geo
+  when: obs_geoip_enabled
+
+- name: GeoIP unit tests as tests-out.toml
+  ansible.builtin.copy:
+    src: vector-tests/tests-geo.toml
+    dest: "{{ obs_etc }}/vector/tests-out.toml"
+    owner: root
+    group: "{{ obs_user }}"
+    mode: "0640"
+  register: obs_cfg_vector_geo_tests
+  when: obs_geoip_enabled
+
+- name: Vector config changed? (any of the files above)
+  ansible.builtin.set_fact:
+    obs_cfg_vector:
+      changed: "{{ obs_cfg_vector_main is changed or obs_cfg_vector_plain is changed or obs_cfg_vector_geo is changed
+                   or obs_cfg_vector_geo_tests is changed }}"
 
 - name: vector validate + vector test (redaction fixtures must pass before Vector (re)starts)
   ansible.builtin.shell: |
     set -euo pipefail
-    {{ obs_root }}/bin/vector validate --no-environment {{ obs_etc }}/vector/vector.toml
-    {{ obs_root }}/bin/vector test {{ obs_etc }}/vector/vector.toml {{ obs_etc }}/vector/tests.toml
+    cd {{ obs_etc }}/vector
+    {{ obs_root }}/bin/vector validate --no-environment vector.toml nginx-out.toml
+    {{ obs_root }}/bin/vector test vector.toml nginx-out.toml tests.toml tests-out.toml
   args:
     executable: /bin/bash
   become_user: "{{ obs_user }}"

@@ -1,0 +1,50 @@
+# P2: read-only gateway for Grafana on CT 102 (obs_grafana_access_enabled; docs/grafana-access.md).
+# The unit itself comes from obs_units_extra (defaults); this file only writes its config and checks the inputs.
+- name: Grafana gateway enabled
+  when: obs_grafana_access_enabled
+  block:
+    - name: Gateway inputs are sane (fails before any change)
+      ansible.builtin.assert:
+        that:
+          - obs_grafana_vm_token | length >= 32
+          - obs_grafana_vl_token | length >= 32
+          - obs_grafana_vm_token != obs_grafana_vl_token
+          - obs_grafana_listen_ip is match('^100\.')          # Tailscale CGNAT range only, never public/LAN
+          - obs_grafana_peer_ip is match('^100\.')
+          - obs_grafana_listen_ip != obs_grafana_peer_ip
+          - obs_grafana_port not in (obs_ports.values() | list)
+        fail_msg: "obs_grafana_*: tokens missing/short/equal, a non-tailnet address, or a port clash"
+        quiet: true
+
+    - name: vmauth config (tokens; root:obs 0640, never logged)
+      ansible.builtin.template:
+        src: vmauth.yml.j2
+        dest: "{{ obs_etc }}/vmauth.yml"
+        owner: root
+        group: "{{ obs_user }}"
+        mode: "0640"
+      no_log: true
+      diff: false
+      register: obs_cfg_vmauth
+
+    - name: Restart list (obs-vmauth on a config change)
+      ansible.builtin.set_fact:
+        obs_restart_extra: "{{ (obs_restart_extra | default([])) + (['obs-vmauth'] if obs_cfg_vmauth is changed else []) }}"
+
+- name: Grafana gateway disabled -> config absent (the unit is gone with obs_units_extra)
+  when: not obs_grafana_access_enabled
+  block:
+    - name: obs-vmauth stopped and disabled (if it ever existed)
+      ansible.builtin.systemd_service:
+        name: obs-vmauth
+        state: stopped
+        enabled: false
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: vmauth config and unit absent
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: ["{{ obs_etc }}/vmauth.yml", /etc/systemd/system/obs-vmauth.service]
+      register: obs_vmauth_removed

@@ -1,0 +1,41 @@
+# lemdro.id Grafana (PLAN P2/P5.1) on CT 102 grafana-influx: datasources + dashboards provisioned as code.
+# Playbook: ansible/grafana.yml (host group grafana_home). Restarts grafana-server only; nothing else on CT 102.
+grafana_lemdroid_folder_uid: lemdroid
+grafana_lemdroid_folder_title: lemdro.id
+grafana_lemdroid_dashboards_dir: /var/lib/grafana/dashboards/lemdroid
+grafana_lemdroid_provisioning_dir: /etc/grafana/provisioning
+grafana_lemdroid_service: grafana-server
+grafana_lemdroid_min_version: "13.0.0"
+
+# Influx on the same CT (Grafana -> 127.0.0.1:8086). Token: READ on lemdroid_* buckets only (vault).
+grafana_lemdroid_influx_url: http://127.0.0.1:8086
+grafana_lemdroid_influx_org: home
+grafana_lemdroid_influx_bucket: lemdroid_interactions
+grafana_lemdroid_influx_token: "{{ vault_grafana_influx_read_token | default('') }}"
+
+# lemdroid-ovh read gateway (role obs, obs-vmauth on the OVH Tailscale IP; docs/grafana-access.md).
+# Empty tokens or obs_grafana_access_enabled=false on the OVH side = the VM/VL datasources are not provisioned.
+grafana_lemdroid_gateway_url: "http://{{ hostvars['lemdroid-ovh'].tailscale_ip | default('100.73.194.110') }}:8427"
+grafana_lemdroid_vm_token: "{{ vault_obs_grafana_vm_token | default('') }}"
+grafana_lemdroid_vl_token: "{{ vault_obs_grafana_vl_token | default('') }}"
+grafana_lemdroid_gateway_enabled: "{{ (grafana_lemdroid_vm_token | length > 0) and (grafana_lemdroid_vl_token | length > 0) }}"
+
+# VictoriaLogs datasource plugin (signed, grafana.com catalog). Pinned.
+grafana_lemdroid_vl_plugin: victoriametrics-logs-datasource
+grafana_lemdroid_vl_plugin_version: 0.34.0
+
+# Cole-only viewing. Server-wide hardening via a systemd drop-in (env overrides grafana.ini; grafana.ini untouched):
+# no anonymous access, no sign-up, no public/shared dashboards, no external snapshots (nothing leaves the CT).
+grafana_lemdroid_env:
+  GF_AUTH_ANONYMOUS_ENABLED: "false"
+  GF_USERS_ALLOW_SIGN_UP: "false"
+  GF_USERS_ALLOW_ORG_CREATE: "false"
+  GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+  GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+  GF_SECURITY_DISABLE_GRAVATAR: "true"
+# The lemdro.id folder is restricted to the Admin role (Cole) through the HTTP API, with a service-account token
+# (Admin) from vault. Org users other than these logins fail the play (OSS Grafana can't restrict datasources:
+# any org member could query them, so membership itself is the gate). Empty list = check skipped (warn).
+grafana_lemdroid_api_url: http://127.0.0.1:3000
+grafana_lemdroid_admin_token: "{{ vault_grafana_admin_token | default('') }}"
+grafana_lemdroid_allowed_logins: []
