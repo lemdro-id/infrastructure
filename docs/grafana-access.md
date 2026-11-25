@@ -107,6 +107,8 @@ loads an mmdb via `maxminddb::Reader::open_readfile` (`fs::read` into a `Vec<u8>
 the previous table and the new one, about 18.4 MiB. obs-vector already reaches its 512M cap at startup
 (steady state about 383-400M), so the cap becomes 544M and `obs.slice` becomes MemoryHigh 1696M / MemoryMax
 1952M. The refresh unit stays at 256M: the ASN `vector test` runs only after the City test process has exited.
+Live, 544M was too tight (468M current / 479M peak three hours after a restart, about 315M anon plus
+page cache), so with ASN on the cap is now 640M and `obs.slice` is MemoryHigh 1792M / MemoryMax 2048M (112M slack kept).
 
 ## Impact: what goes down
 

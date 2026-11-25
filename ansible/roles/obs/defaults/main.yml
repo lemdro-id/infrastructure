@@ -97,7 +97,7 @@ obs_log_acls:
 # systemd units. All run as obs in obs.slice. Slice MemoryHigh/MemoryMax (templates/obs.slice.j2):
 #   GeoIP off:                         1344M / 1600M  (vector 256M; per-unit sum 1232M, or 1296M with vmauth)
 #   GeoIP on, ASN off:                 1664M / 1920M  (vector 512M)
-#   GeoIP on and obs_geoip_asn_enabled: 1696M / 1952M (vector 544M)
+#   GeoIP on and obs_geoip_asn_enabled: 1792M / 2048M (vector 640M)
 # The sum of these per-unit MemoryMax values, including obs-vmauth 64M when the gateway is on, stays
 # under MemoryHigh (112M of slack in both GeoIP-on tiers). rw = extra writable paths (ProtectSystem=strict).
 obs_units:
@@ -181,7 +181,9 @@ obs_units:
     # GeoIP+ASN: DB-IP ASN Lite (2026-11) is 9,648,279 bytes (9.20 MiB). Vector 0.62 loads an mmdb with
     #   maxminddb Reader::open_readfile (the file bytes in a Vec, not mmap). A reload holds both copies,
     #   ~18.4 MiB. +32M covers that without sitting on the cap again: 544M, and the slice moves with it.
-    memory_max: "{{ '544M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('512M' if obs_geoip_enabled else '256M') }}"
+    #   Live (2026-11-25): 238M two minutes after a restart, 468M current / 479M peak three hours later
+    #   (about 315M anon + 160M page cache), so 544M had little room. Raised to 640M; slice +96M keeps 112M slack.
+    memory_max: "{{ '640M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('512M' if obs_geoip_enabled else '256M') }}"
     supplementary_groups: [systemd-journal]   # read the journal; NOT adm, NOT docker
     rw: ["{{ obs_data }}/vector"]
     env: ["VECTOR_LOG=warn"]

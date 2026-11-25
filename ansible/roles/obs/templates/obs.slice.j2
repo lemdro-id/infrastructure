@@ -3,7 +3,7 @@
 # (64M), which still fits under MemoryHigh. Vector is 256M (was 192M; live cgroup was ~185M).
 # GeoIP on: 1664M / 1920M. Vector is 512M (City DB ~125 MB, two copies for a moment during a reload).
 {% if obs_geoip_enabled and obs_geoip_asn_enabled %}
-# GeoIP ASN on: 1696M / 1952M. Vector is 544M (ASN Lite mmdb 9.20 MiB, two copies during a reload).
+# GeoIP ASN on: 1792M / 2048M. Vector is 640M (ASN Lite mmdb 9.20 MiB, two copies during a reload; 544M was too tight live).
 {% endif %}
 [Unit]
 Description=lemdro.id observability stack
@@ -11,7 +11,7 @@ Before=slices.target
 
 [Slice]
 MemoryAccounting=true
-MemoryHigh={{ '1696M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('1664M' if obs_geoip_enabled else '1344M') }}
-MemoryMax={{ '1952M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('1920M' if obs_geoip_enabled else '1600M') }}
+MemoryHigh={{ '1792M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('1664M' if obs_geoip_enabled else '1344M') }}
+MemoryMax={{ '2048M' if (obs_geoip_enabled and obs_geoip_asn_enabled) else ('1920M' if obs_geoip_enabled else '1600M') }}
 CPUWeight=20
 IOWeight=20
