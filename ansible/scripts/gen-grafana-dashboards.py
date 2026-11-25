@@ -560,8 +560,9 @@ def vl_tx(ref=None, numeric=(), rename=None):
 
 
 def maps():
+    # 6h stays the default: a map is a recent-traffic view (same window as Health). The picker still widens it.
     b = Board("lemdroid-maps", "lemdro.id · Maps (visitors and federation)", ["lemdro.id", "maps"],
-              time_from="now-24h", refresh="5m",
+              time_from="now-6h", refresh="5m",
               desc="Offline GeoIP of the truncated client network (/24, /48) only, done in Vector on lemdroid-ovh "
                    "with DB-IP Lite City. City-level at best (DB centroid rounded to 0.1 deg). " + DBIP)
     b.vars = [
@@ -572,12 +573,15 @@ def maps():
                      for x in ("browser", "app", "other", "bot_or_tool", "none")],
          "description": "User-agent class (federation servers are on the federation map, not here)."},
     ]
+    # geo_country:* drops rows from before GeoIP (no geo fields). stats by (geo_country) otherwise keeps an
+    # empty group, which Grafana legends with the query text.
     vis = 'source:nginx ua_class:in(${ua:csv}) -route_class:in(inbox, health) -geo_cdn:cloudflare'
     latlon = ("geo_lat", "geo_lon")
     b.row("Visitors")
     b.add([
         geomap("Visitors by country (circle size = requests)", [
-            t_vl(f'{vis} | stats by (geo_country) count() requests, count_uniq(client_net) networks', "stats")],
+            t_vl(f'{vis} geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks',
+                 "stats")],
             [geo_layer("Countries", None, "requests", "blue", "country", max_size=40)], w=12,
             transformations=vl_tx(),
             desc="Excludes federation (inbox), health checks and Cloudflare-egress networks (WARP/Workers). "
@@ -592,7 +596,7 @@ def maps():
     ], 13)
     b.add([
         table("Top countries: requests and distinct /24 (or /48) networks", [
-            t_vl(f'{vis} | stats by (geo_country) count() requests, count_uniq(client_net) networks '
+            t_vl(f'{vis} geo_country:* | stats by (geo_country) count() requests, count_uniq(client_net) networks '
                  '| sort by (requests desc) | limit 40', "stats")], w=7,
               transformations=vl_tx(rename={"geo_country": "Country", "requests": "Requests",
                                             "networks": "Networks"}),
@@ -603,10 +607,12 @@ def maps():
             'count_uniq(client_net) networks | sort by (requests desc) | limit 50', "stats")], w=9, sort="Requests",
               transformations=vl_tx(rename={"geo_country": "Country", "geo_region": "Region", "geo_city": "City",
                                             "requests": "Requests", "networks": "Networks"})),
-        ts("Requests/s by country (top 10, VictoriaMetrics)", [t_prom(
+        ts("Requests/s by country (top 10, all nginx traffic)", [t_prom(
             'topk(10, sum by (geo_country) (rate(lemdroid_nginx_requests_by_geo_total{ua_class=~"${ua:regex}"}'
             '[$__rate_interval])))', "{{geo_country}}")], w=8, unit="reqps", stack=True,
-           desc="From the bounded per-country counter (country x client type only)."),
+           desc="VictoriaMetrics lemdroid_nginx_requests_by_geo_total is labeled only by geo_country and ua_class. "
+                "This panel counts every request in the selected user-agent classes, including federation inbox, "
+                "health checks, and Cloudflare-egress networks. Unknown lookups are country ZZ."),
     ], 10)
 
     fed = 'source:nginx route_class:inbox'
@@ -626,10 +632,10 @@ def maps():
     ], 14)
     b.add([
         bargauge("Inbound activity by peer country", [t_vl(
-            f'{fed} -geo_cdn:cloudflare | stats by (geo_country) count() activities | sort by (activities desc) '
-            '| limit 20', "stats", legend="{{geo_country}}")], w=12),
+            f'{fed} -geo_cdn:cloudflare geo_country:* | stats by (geo_country) count() activities '
+            '| sort by (activities desc) | limit 20', "stats", legend="{{geo_country}}")], w=12),
         table("Top senders with location", [t_vl(
-            f'{fed} | stats by (sig_host, geo_cdn, geo_country, geo_city) count() activities '
+            f'{fed} geo_country:* | stats by (sig_host, geo_cdn, geo_country, geo_city) count() activities '
             '| sort by (activities desc) | limit 50', "stats")], w=12, sort="Activities",
               transformations=vl_tx(rename={"sig_host": "Instance", "geo_cdn": "CDN", "geo_country": "Country",
                                             "geo_city": "City", "activities": "Activities"})),
