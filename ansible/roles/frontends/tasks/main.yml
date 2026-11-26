@@ -24,6 +24,18 @@
     group: root
     mode: "0750"
 
+# nginx workers (uid 101 inside nginx:alpine; no userns remap, so the same uid on the host, where 101 is messagebus)
+# reopen the log themselves after `nginx -s reopen`, so they must be able to traverse the directory. Without this the
+# 2026-11-26 rotation left every worker on the renamed access.json.1 ("open() ... failed (13: Permission denied)").
+# Traverse only: the master (root) creates files; workers never need to write the directory.
+- name: nginx workers may traverse /var/log/lemdroid-nginx (uid 101, ACL)
+  ansible.posix.acl:
+    path: /var/log/lemdroid-nginx
+    entity: "101"
+    etype: user
+    permissions: rx
+    state: present
+
 - name: logrotate for the JSON access log (rename + nginx reopen; no copytruncate gap)
   ansible.builtin.copy:
     dest: /etc/logrotate.d/lemdroid-nginx
@@ -38,7 +50,9 @@
           missingok
           notifempty
           nocompress
-          nocreate
+          # New file owned by the nginx worker uid (101 = messagebus on the host; logrotate needs a uid that
+          # exists in the host passwd, "nginx" does not). 0640 keeps the ACL mask at r--, so obs (default ACL) reads.
+          create 0640 101 root
           sharedscripts
           postrotate
               # a failed reopen must be visible (logrotate exits non-zero -> logrotate.service failed), never hidden
