@@ -110,9 +110,20 @@ if starts_with(p, "/api/v3/") || p == "/api/v3" {
   route_class = "api"
   sub = replace(replace(p, r'^/api/v3', ""), r'/$', "")
   route = if includes(lemmy_api_routes, sub) { "/api/v3" + sub } else { "/api/v3/:other" }
-} else if p == "/inbox" || match(p, r'^/(u|c)/[^/]+/inbox$') {
+} else if match(p, r'^/(u|c)/[^/]+/inbox$') {
+  # User and community inboxes always hit the Lemmy regex location (it does not consult
+  # $proxpass), so a browser GET stays "inbox" too.
   route_class = "inbox"
-  route = if p == "/inbox" { "/inbox" } else { replace(p, r'^/(u|c)/[^/]+/inbox$', "/$1/:name/inbox") }
+  route = replace(p, r'^/(u|c)/[^/]+/inbox$', "/$1/:name/inbox")
+} else if p == "/inbox" {
+  # Exact /inbox is both the Photon inbox page and the ActivityPub shared inbox.
+  # proxpass is nginx's $proxpass map: lemmy for any non-GET/HEAD and for GET/HEAD with an
+  # ActivityPub Accept, photon-ui for other GET/HEAD. Only the photon-ui case is the UI.
+  # A missing proxpass stays "inbox" so a line without the field is not dropped from
+  # federation counts. /inbox/* does not match this exact path and is classified as html below.
+  route = "/inbox"
+  pp = downcase(string(.proxpass) ?? "")
+  route_class = if pp == "photon-ui" { "html" } else { "inbox" }
 } else if starts_with(p, "/pictrs/") {
   route_class = "pictrs"
   route = if starts_with(p, "/pictrs/image/") { "/pictrs/image/:file" } else { "/pictrs/:other" }
