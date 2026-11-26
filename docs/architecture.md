@@ -15,9 +15,9 @@ User / fediverse ──► Cloudflare (zone lemdro.id, Free plan)
          └─► Cloudflare Tunnel `lemdroid-ovh` (outbound-only cloudflared on the server)
                └─► Backend server (OVH, Debian 13)
                      ├─ nginx (Docker, host network, 127.0.0.1:8088)       box/frontends/nginx.conf
-                     │    ├─ lemdro.id: /inbox, /api, /pictrs, /feeds, nodeinfo, .well-known,
-                     │    │   ActivityPub (by Accept header) and every non-GET ──► Lemmy 127.0.0.1:8080
-                     │    │   everything else ──► Photon static files (/srv/photon, internal 127.0.0.1:8089)
+                     │    ├─ lemdro.id: /api, /pictrs, /feeds, nodeinfo, .well-known,
+                     │    │   /(u|c)/:name/inbox, ActivityPub Accept and every non-GET ──► Lemmy 127.0.0.1:8080
+                     │    │   browser GET/HEAD /inbox and everything else ──► Photon (/srv/photon, 127.0.0.1:8089)
                      │    ├─ l.lemdro.id   ──► lemmy-ui 127.0.0.1:1234 (/api → Lemmy)
                      │    └─ old.lemdro.id ──► mlmym 127.0.0.1:8081
                      ├─ Lemmy 0.19.21 (Docker Compose, host network, 127.0.0.1:8080)

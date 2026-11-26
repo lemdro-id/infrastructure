@@ -34,6 +34,72 @@ assert_eq!(keys(.), ["cf_ray", "client_ip", "message", "request_id", "source", "
 '''
 
 [[tests]]
+name = "nginx: exact /inbox follows proxpass; user and community inboxes stay inbox"
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.201","request_id":"b1","cf_ray":"","cf_country":"US","client_ip":"198.51.100.31","host":"lemdro.id","method":"GET","request_uri":"/inbox","proto":"HTTP/1.1","status":"200","bytes":"100","request_length":"100","request_time":"0.004","upstream":"127.0.0.1:8089","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.001","upstream_response_time":"0.004","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.202","request_id":"b2","cf_ray":"","cf_country":"","client_ip":"198.51.100.32","host":"lemdro.id","method":"GET","request_uri":"/inbox?sort=New","proto":"HTTP/1.1","status":"200","bytes":"100","request_length":"100","request_time":"0.004","upstream":"127.0.0.1:8089","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.001","upstream_response_time":"0.004","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.203","request_id":"b3","cf_ray":"","cf_country":"","client_ip":"198.51.100.33","host":"lemdro.id","method":"GET","request_uri":"/inbox","proto":"HTTP/1.1","status":"404","bytes":"0","request_length":"200","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"404","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"lemmy","cache":"","ua":"Lemmy/0.19.21; +https://lemmy.world","sig_host":"lemmy.world","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.204","request_id":"b4","cf_ray":"","cf_country":"","client_ip":"198.51.100.34","host":"lemdro.id","method":"GET","request_uri":"/u/alice/inbox","proto":"HTTP/1.1","status":"200","bytes":"10","request_length":"100","request_time":"0.010","upstream":"127.0.0.1:8080","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.010","upstream_response_time":"0.010","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.205","request_id":"b5","cf_ray":"","cf_country":"","client_ip":"198.51.100.35","host":"lemdro.id","method":"POST","request_uri":"/c/news/inbox","proto":"HTTP/1.1","status":"202","bytes":"0","request_length":"500","request_time":"0.020","upstream":"127.0.0.1:8080","upstream_status":"202","upstream_connect_time":"0.000","upstream_header_time":"0.020","upstream_response_time":"0.020","proxpass":"lemmy","cache":"","ua":"Lemmy/0.19.21; +https://lemmy.world","sig_host":"lemmy.world","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.206","request_id":"b6","cf_ray":"","cf_country":"","client_ip":"198.51.100.36","host":"lemdro.id","method":"POST","request_uri":"/inbox","proto":"HTTP/1.1","status":"202","bytes":"0","request_length":"500","request_time":"0.020","upstream":"127.0.0.1:8080","upstream_status":"202","upstream_connect_time":"0.000","upstream_header_time":"0.020","upstream_response_time":"0.020","proxpass":"","cache":"","ua":"Lemmy/0.19.21; +https://lemmy.world","sig_host":"lemmy.world","server_port":"8088"}'
+[[tests.inputs]]
+insert_at = "nginx_parse"
+type = "log"
+log_fields.message = '{"msec":"1795446307.207","request_id":"b7","cf_ray":"","cf_country":"","client_ip":"198.51.100.37","host":"lemdro.id","method":"GET","request_uri":"/inbox/replies","proto":"HTTP/1.1","status":"200","bytes":"100","request_length":"100","request_time":"0.004","upstream":"127.0.0.1:8089","upstream_status":"200","upstream_connect_time":"0.000","upstream_header_time":"0.001","upstream_response_time":"0.004","proxpass":"photon-ui","cache":"","ua":"Mozilla/5.0 Firefox/140.0","sig_host":"","server_port":"8088"}'
+[[tests.outputs]]
+extract_from = "nginx_main"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+if .request_id == "b1" {
+  assert_eq!(.route_class, "html")
+  assert_eq!(.route, "/inbox")
+  assert_eq!(.ua_class, "browser")
+} else if .request_id == "b2" {
+  assert_eq!(.route_class, "html")
+  assert_eq!(.route, "/inbox")
+  assert_eq!(.args, "sort=New")
+} else if .request_id == "b3" {
+  assert_eq!(.route_class, "inbox")
+  assert_eq!(.route, "/inbox")
+  assert_eq!(.proxpass, "lemmy")
+  assert_eq!(.sig_host, "lemmy.world")
+} else if .request_id == "b4" {
+  assert_eq!(.route_class, "inbox")
+  assert_eq!(.route, "/u/:name/inbox")
+} else if .request_id == "b5" {
+  assert_eq!(.route_class, "inbox")
+  assert_eq!(.route, "/c/:name/inbox")
+} else if .request_id == "b6" {
+  assert_eq!(.route_class, "inbox")
+  assert_eq!(.route, "/inbox")
+  assert!(!exists(.proxpass))
+} else if .request_id == "b7" {
+  assert_eq!(.route_class, "html")
+  assert_eq!(.route, "/inbox")
+} else {
+  assert!(false, "unexpected request_id")
+}
+'''
+
+[[tests]]
 name = "nginx: secrets in path and query are redacted, IPv6 /48, image proxy host only"
 [[tests.inputs]]
 insert_at = "nginx_parse"
