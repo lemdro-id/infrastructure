@@ -9,11 +9,14 @@ What changed from v1:
     keywords, minus penalties for deals, listicles, opinion, rumors, etc.
   * Big stories (3+ independent outlets) post on the next poll, 24/7.
     Ordinary stories queue and drain at most one per `min_gap_minutes`,
-    best-first, outside quiet hours.
+    best-first, outside quiet hours. A story that qualifies for the
+    rolling-cap bypass also skips that gap.
   * Rolling 24h cap (not reset at midnight). The last reserved slots are
     high-priority only (score >= high_priority_min_score, or a privacy flag).
     Big stories, and ordinary stories with enough independent outlets and
-    that score, may overflow up to cap + big_overflow.
+    that score, may overflow up to cap + big_overflow. Those ordinary
+    stories also skip the min gap. Quiet hours, the hard cap, and one
+    ordinary post per poll still apply.
   * 48h dedupe by normalized URL, by story cluster, and by rare headline
     stems (3+ shared, or 2+ with one stem of 5+ characters), against our own
     state and against recent !android posts (human and bot).
@@ -811,17 +814,24 @@ def score_cluster(cl: Cluster, cfg: dict, now: datetime) -> None:
     # Use the MEDIAN item's framing (lower median on ties, i.e. the kinder
     # one): one outlet calling a story a "deal" does not make it a deal, and
     # one news item wrongly merged into a deals cluster does not clean it.
-    # Rumor and privacy are the exception: they apply when ANY title matches,
-    # so a secondary "reportedly" or a "Privacy" headline is not dropped.
+    # Privacy applies when ANY title matches (a "Privacy" headline counts).
+    # Rumor applies only when EVERY title is rumor-framed. One outlet reporting
+    # the story as fact drops the -2.5 even if another says "Could Soon".
     eligible = sorted([i for i in cl.items if i.relevant] or cl.items, key=item_pen, reverse=True)
     best = eligible[(len(eligible) - 1) // 2]
     flags = {k: v for k, v in best.flags.items() if not k.startswith("_") and k in pen_pts}
-    for special in ("rumor", "privacy"):
-        if special in flags:
-            continue
+    all_rumor = bool(cl.items) and all("rumor" in i.flags for i in cl.items)
+    if not all_rumor:
+        flags.pop("rumor", None)
+    elif "rumor" not in flags:
         for i in cl.items:
-            if special in i.flags:
-                flags[special] = i.flags[special]
+            if "rumor" in i.flags:
+                flags["rumor"] = i.flags["rumor"]
+                break
+    if "privacy" not in flags:
+        for i in cl.items:
+            if "privacy" in i.flags:
+                flags["privacy"] = i.flags["privacy"]
                 break
     pen = sum(pen_pts[k] for k in flags)
     rumor = "rumor" in flags
@@ -1277,9 +1287,12 @@ def decide(
     # The last `reserved_high_priority_slots` of the rolling cap are held for
     # score >= high_priority_min_score or a privacy flag. Once that cap is
     # full, a story with cap_bypass_min_outlets independent outlets and that
-    # same score may still post, up to the hard cap. A story that does not
-    # qualify is skipped and the next queued story is considered, so a
-    # lower-ranked high-priority story can still take the open slot.
+    # same score may still post, up to the hard cap. The same stories also
+    # skip min_gap. Quiet hours, the hard cap, and one ordinary post per poll
+    # still apply (and a big story posted this poll still blocks ordinary).
+    # A story that does not qualify is skipped and the next queued story is
+    # considered, so a lower-ranked bypass or high-priority story can still
+    # take the open slot.
     def rank(c: Cluster) -> float:
         hours = (now - c.first_published).total_seconds() / 3600
         return c.score - float(sched["age_decay_per_hour"]) * hours
@@ -1308,7 +1321,7 @@ def decide(
         if quiet:
             cl.skip = f"queued (rank {rk:.2f}): quiet hours (PT)"
             continue
-        if gap_block:
+        if gap_block and not cap_bypass(cl):
             waited = int((now - last_post).total_seconds() // 60)
             need = int(min_gap.total_seconds() // 60)
             cl.skip = f"queued (rank {rk:.2f}): min gap ({waited}m < {need}m)"
@@ -1336,11 +1349,14 @@ def decide(
         if hit:
             cl.skip = hit
             continue
-        note = ""
+        notes: list[str] = []
         if count >= cap:
-            note = ", cap bypass"
+            notes.append("cap bypass")
         elif count >= open_general and reserved:
-            note = ", reserved slot"
+            notes.append("reserved slot")
+        if gap_block and cap_bypass(cl):
+            notes.append("min gap bypass")
+        note = (", " + ", ".join(notes)) if notes else ""
         cl.decision = f"POST (ordinary, rank {rk:.2f}{note})"
         to_post.append(cl)
         posted_one = True
@@ -1366,6 +1382,41 @@ def describe(cl: Cluster) -> str:
     return "\n".join(lines)
 
 
+DROP_LOG_LIMIT = 20
+
+
+def notable_drop(cl: Cluster) -> bool:
+    """A skipped cluster worth a compact line in poster.log.
+
+    `considered:` already shows the queue, dwell, and big-story holds. This
+    catches score-floor drops of a real cluster (2+ titles or 2+ outlets) and
+    other filters on a multi-outlet story (not Android-related, hard exclude,
+    stale, no link, dedupe), which otherwise never appear.
+    """
+    skip = cl.skip or ""
+    if cl.decision or not skip:
+        return False
+    multi = len(cl.outlets) >= 2
+    if skip.startswith("score ") and (multi or len(cl.items) >= 2):
+        return True
+    return multi and (
+        skip.startswith("not Android-related")
+        or skip.startswith("excluded")
+        or skip.startswith("stale")
+        or skip.startswith("no postable")
+        or skip.startswith("duplicate")
+        or skip.startswith("already in")
+        or skip.startswith("same story")
+    )
+
+
+def describe_drop(cl: Cluster) -> str:
+    outlets = ",".join(cl.outlets) or "-"
+    titles = " | ".join(i.title[:90] for i in cl.items[:4])
+    more = f" | +{len(cl.items) - 4} more" if len(cl.items) > 4 else ""
+    return f"  [{cl.cid}] score {cl.score:g} outlets={outlets}  {cl.skip}\n    {titles}{more}"
+
+
 def print_poll(now: datetime, health: list[dict], clusters: list[Cluster], to_post: list[Cluster],
                state: dict, dry: bool, verbose: bool) -> None:
     print(f"AndroidNews v2 — {'DRY RUN' if dry else 'POST'}  now={fmt2(now)}")
@@ -1383,6 +1434,14 @@ def print_poll(now: datetime, health: list[dict], clusters: list[Cluster], to_po
         print("considered:")
         for cl in sorted(shown, key=lambda c: -c.score)[: (999 if verbose else 15)]:
             print(describe(cl))
+    drops = [c for c in clusters if c not in to_post and c not in shown and notable_drop(c)]
+    if drops:
+        print("dropped:")
+        for cl in sorted(drops, key=lambda c: -c.score)[:DROP_LOG_LIMIT]:
+            print(describe_drop(cl))
+        extra = len(drops) - DROP_LOG_LIMIT
+        if extra > 0:
+            print(f"  … {extra} more dropped clusters")
 
 
 # --------------------------------------------------------------------------

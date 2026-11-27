@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import io
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -260,20 +262,32 @@ class FramingTests(PosterTestCase):
     def bonus(self, title: str) -> set[str]:
         return set(self.item(title).bonus)
 
-    def test_rumor_and_privacy_apply_from_any_title(self) -> None:
-        clean = "Samsung launches Android 17 support"
+    def test_rumor_only_when_every_title_hedges_privacy_any_title(self) -> None:
+        # One outlet saying "Could Soon" does not penalize a cluster when
+        # another outlet reports the same story as fact.
+        fact = "WhatsApp is adding eSIM support on Android"
+        hedge = "WhatsApp Could Soon add eSIM support on Android"
+        fact_item = self.item(fact, "9to5")
+        hedge_item = self.item(hedge, "androidheadlines")
+        self.assertNotIn("rumor", fact_item.flags)
+        self.assertIn("rumor", hedge_item.flags)
+        mixed = self.cluster([fact_item, hedge_item])
+        self.assertNotIn("rumor", mixed.flags)
         control = self.cluster([
-            self.item(clean, "9to5"),
-            self.item(clean, "yahoo"),
+            self.item(fact, "9to5"),
+            self.item(fact, "engadget"),
         ])
-        hedged = self.cluster([
-            self.item(clean, "9to5"),
-            self.item("Samsung reportedly launches Android 17 support", "yahoo"),
-        ])
-        self.assertNotIn("rumor", control.flags)
-        self.assertIn("rumor", hedged.flags)
-        self.assertAlmostEqual(hedged.score, control.score - 2.5, places=2)
+        self.assertAlmostEqual(mixed.score, control.score, places=2)
 
+        # Every title hedges: the -2.5 applies (once).
+        all_rumor = self.cluster([
+            self.item(hedge, "9to5"),
+            self.item("WhatsApp reportedly is adding eSIM support on Android", "androidheadlines"),
+        ])
+        self.assertIn("rumor", all_rumor.flags)
+        self.assertAlmostEqual(all_rumor.score, mixed.score - 2.5, places=2)
+
+        clean = "Samsung launches Android 17 support"
         three = [self.item(clean, outlet) for outlet in ("9to5", "yahoo", "conde-nast")]
         plain = self.cluster(three)
         privacy = self.cluster([
@@ -500,10 +514,29 @@ class ScheduleTests(PosterTestCase):
         self.assertEqual(blocked, [], self.explain(clusters, blocked))
         self.assertIn(f"hard cap {self.hard}/24h", clusters[0].skip)
 
+    def test_cap_bypass_also_skips_min_gap(self) -> None:
+        # 2+ outlets and score >= 4 posts inside the 90 min gap, including
+        # when a higher-ranked one-outlet story is still waiting on that gap.
+        waiting = self.high_score(3)
+        pair = self.two_outlet("Motorola details a new battery", ("gsmarena", "phonearena"), hours=10)
+        to_post, clusters = self.poll([waiting] + pair, self.v2_posts(1, hours_ago=0.5))
+        self.assertEqual(len(to_post), 1, self.explain(clusters, to_post))
+        self.assertGreaterEqual(len(to_post[0].outlets), 2)
+        self.assertGreaterEqual(to_post[0].score, 4)
+        self.assertIn("min gap bypass", to_post[0].decision)
+        held = [c for c in clusters if c.skip and c.skip.startswith("queued") and "min gap" in c.skip]
+        self.assertEqual(len(held), 1, self.explain(clusters, to_post))
+        self.assertLess(len(held[0].outlets), 2)
+
+        # The same bypass still stops at the hard cap.
+        blocked, clusters = self.poll(pair, self.v2_posts(self.hard, hours_ago=0.5))
+        self.assertEqual(blocked, [], self.explain(clusters, blocked))
+        self.assertIn(f"hard cap {self.hard}/24h", clusters[0].skip)
+
     def test_min_gap_quiet_hours_and_one_ordinary_post_still_hold(self) -> None:
-        pair = self.two_outlet("Samsung launches Android 17 support", ("9to5", "yahoo"))
-        gapped, clusters = self.poll(pair, self.v2_posts(self.cap, hours_ago=0.5))
-        self.assertEqual(gapped, [], self.explain(clusters, gapped))
+        # One outlet, even at score 4, still waits out the 90 min gap.
+        one, clusters = self.poll([self.high_score(4)], self.v2_posts(1, hours_ago=0.5))
+        self.assertEqual(one, [], self.explain(clusters, one))
         self.assertIn("min gap", clusters[0].skip)
 
         q_when = self.quiet - timedelta(hours=4)
@@ -515,6 +548,7 @@ class ScheduleTests(PosterTestCase):
         self.assertEqual(quiet, [], self.explain(clusters, quiet))
         self.assertIn("quiet hours", clusters[0].skip)
 
+        pair = self.two_outlet("Samsung launches Android 17 support", ("9to5", "yahoo"))
         other = self.two_outlet(
             "Huawei antitrust lawsuit ruling shakes the industry", ("gsmarena", "phonearena"))
         to_post, clusters = self.poll(pair + other, self.v2_posts(self.cap))
@@ -522,6 +556,48 @@ class ScheduleTests(PosterTestCase):
         self.assertIn("cap bypass", to_post[0].decision)
         waiting = [c for c in clusters if c.skip and "one ordinary post per poll" in c.skip]
         self.assertEqual(len(waiting), 1, self.explain(clusters, to_post))
+
+
+class LogTests(PosterTestCase):
+    def test_print_poll_logs_multi_outlet_score_floor_drops(self) -> None:
+        titles = [
+            "ChatGPT can place Android calls and texts",
+            "ChatGPT Could Soon place Android calls",
+            "ChatGPT Android calling rolls out quietly",
+        ]
+        outlets = ["authority-media", "androidheadlines", "gsmarena"]
+        dropped = poster.Cluster(items=[self.item(t, o) for t, o in zip(titles, outlets)])
+        dropped.cid = "c042"
+        dropped.score = 2.5
+        dropped.outlets = outlets
+        dropped.skip = "score 2.5 < 3.0"
+        dropped.breakdown = ["3 outlet(s) x2.0"]
+        noise = poster.Cluster(items=[self.item("Pixel launches a tiny side note")])
+        noise.cid = "c099"
+        noise.score = 2.0
+        noise.outlets = ["9to5"]
+        noise.skip = "score 2 < 3.0"
+        noise.breakdown = ["1 outlet(s) x2.0"]
+        excluded = poster.Cluster(items=[
+            self.item("Pixel flash sale cuts the price", "9to5"),
+            self.item("Pixel flash sale cuts the price", "yahoo"),
+        ])
+        excluded.cid = "c050"
+        excluded.score = 1.0
+        excluded.outlets = ["9to5", "yahoo"]
+        excluded.skip = "excluded (deal)"
+        excluded.breakdown = ["2 outlet(s) x2.0"]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            poster.print_poll(self.now, [], [dropped, noise, excluded], [], {"posted": []}, True, False)
+        text = buf.getvalue()
+        self.assertIn("dropped:", text)
+        self.assertIn("[c042] score 2.5 outlets=authority-media,androidheadlines,gsmarena  score 2.5 < 3.0", text)
+        self.assertIn("ChatGPT can place Android calls and texts", text)
+        self.assertIn("[c050]", text)
+        self.assertIn("excluded (deal)", text)
+        self.assertNotIn("c099", text)
+        self.assertNotIn("tiny side note", text)
 
 
 class ConfigTests(PosterTestCase):

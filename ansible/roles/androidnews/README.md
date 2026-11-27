@@ -24,7 +24,7 @@ v1 posted its 5/day cap right after the 00:00 PT reset, oldest candidates first.
    - +2.0 if an official source is in it.
    - +1 per keyword class, max +2.
    - Framing penalties (deal, listicle, opinion, and the rest) come from the median article.
-   - **Rumor (−2.5) and privacy (+3) apply when any title in the cluster matches**, including a secondary "reportedly" or a "Privacy" headline. Rumor terms include `could`, `may`, `might`, `cooking up`, `said to`, `rumored`, and `tipped`. Bare `may` does not match a month name (`in May 2026`, `May 15`, `this May`).
+   - **Rumor (−2.5) applies only when every title in the cluster is a rumor.** If any outlet reports the story as fact, a "Could Soon" or "reportedly" headline does not penalize the cluster, and the story can still be big. **Privacy (+3) still applies when any title matches.** Rumor terms include `could`, `may`, `might`, `cooking up`, `said to`, `rumored`, and `tipped`. Bare `may` does not match a month name (`in May 2026`, `May 15`, `this May`).
    - −2.0 per recent post on the same product in the last 36 h (topic fatigue, applied for up to two posts; big stories are exempt).
    - **Big** = 3 or more independent outlets and a score of 6 or more. Rumors and how-tos are never big. Deals and sponsored posts are never posted (`hard_exclude`), including `flash sale`, `cuts the price` / `cuts price`, `lowest price` / `lowest-ever price`, `20% off`, and `deal`/`deals`. Word boundaries keep `ideal` and `dealing` from matching.
 5. **Dedupe (48 h):**
@@ -34,9 +34,10 @@ v1 posted its 5/day cap right after the 00:00 PT reset, oldest candidates first.
 6. **Schedule:**
    - Big stories post on this poll, any time of day, up to the hard cap of 10.
    - Ordinary stories wait 120 min to collect other outlets, then go to a queue that drains **one post at a time, best first**, with at least **90 min** between posts.
-   - No ordinary posts 00:00–06:00 PT.
+   - A story with **2 or more independent outlets and score ≥ 4** also **skips that 90 min gap**, whether or not the rolling cap is already full.
+   - No ordinary posts 00:00–06:00 PT. Quiet hours still block that bypass.
    - Rolling cap of **8 per 24 h** (not reset at midnight). The last **2** of those 8 slots are reserved for stories with score ≥ 4 or a privacy flag.
-   - After those 8 posts, an ordinary story with **2 or more independent outlets and score ≥ 4** may bypass the rolling cap, up to the same hard cap of **10**. Min gap, quiet hours, and one ordinary post per poll still apply.
+   - After those 8 posts, the same 2-outlet score ≥ 4 stories may bypass the rolling cap, up to the hard cap of **10**. The hard cap and **one ordinary post per poll** still apply. A big story posted on this poll still blocks the ordinary post. Big stories themselves can still post more than once in a poll, up to the hard cap, including during quiet hours.
    - Stories go stale 12 h after their newest article (24 h for big stories).
    - **Fill mode is off** (`fill_after_hours: 0`). Quiet days stay quiet.
 7. **Link choice:**
@@ -44,7 +45,7 @@ v1 posted its 5/day cap right after the 00:00 PT reset, oldest candidates first.
    - Then a primary page cited by 2 or more outlets, if its title can be read.
    - Otherwise, the most "central" clean headline from a preferred outlet, earliest first.
 
-Every poll logs each cluster's score breakdown and why it was posted, queued, or skipped. Use `-v` to see all clusters.
+Every poll logs each cluster's score breakdown and why it was posted, queued, or skipped. Clusters that fall below the score floor (when the cluster has 2 or more titles or outlets) and other filtered multi-outlet clusters are listed under `dropped:` with the cluster id, score, outlets, skip reason, and titles, so a miss is visible without `-v`. A lone single-outlet story under the floor is left out so the log stays readable. Use `-v` to see all clusters.
 
 ## Files
 
