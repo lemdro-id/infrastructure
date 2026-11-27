@@ -58,6 +58,8 @@
     group: root
     mode: "0755"
 
+# Named files only. Do not copy the whole v2/ directory: test_poster.py is the
+# unit suite and must not be installed under /opt/android-news-bot/v2.
 - name: v2 bot code and config
   ansible.builtin.copy:
     src: "v2/{{ item }}"

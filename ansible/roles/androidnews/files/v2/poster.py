@@ -9,10 +9,17 @@ What changed from v1:
     keywords, minus penalties for deals, listicles, opinion, rumors, etc.
   * Big stories (3+ independent outlets) post on the next poll, 24/7.
     Ordinary stories queue and drain at most one per `min_gap_minutes`,
-    best-first, outside quiet hours.
-  * Rolling 24h cap (not reset at midnight); big stories may overflow by N.
-  * 48h dedupe by normalized URL and by story cluster, against our own state
-    and against recent !android posts (so we never repost a human's post).
+    best-first, outside quiet hours. A story that qualifies for the
+    rolling-cap bypass also skips that gap.
+  * Rolling 24h cap (not reset at midnight). The last reserved slots are
+    high-priority only (score >= high_priority_min_score, or a privacy flag).
+    Big stories, and ordinary stories with enough independent outlets and
+    that score, may overflow up to cap + big_overflow. Those ordinary
+    stories also skip the min gap. Quiet hours, the hard cap, and one
+    ordinary post per poll still apply.
+  * 48h dedupe by normalized URL, by story cluster, and by rare headline
+    stems (3+ shared, or 2+ with one stem of 5+ characters), against our own
+    state and against recent !android posts (human and bot).
 
 Posts use the original headline and link only. No generated summaries.
 Default is --dry-run. Real posting needs --post and $ANDROIDNEWS_PASSWORD.
@@ -178,6 +185,34 @@ def stem(tok: str) -> str:
     if tok.endswith("e") and len(tok) > 3:
         tok = tok[:-1]
     return tok
+
+
+# Surface forms. stem() is applied so the set matches tokens()
+# ("google" -> "googl", "phone" -> "phon", "update" -> "updat").
+# Company and product-line words are excluded on purpose: "Galaxy S26 Ultra"
+# must not match "Galaxy S27 Ultra" on galaxy+ultra alone. Model codes
+# (s26, s27) still count as rare stems.
+_GENERIC_HEADLINE_SURFACES = (
+    "android", "google", "samsung", "pixel", "galaxy",
+    "phone", "phones", "smartphone", "smartphones",
+    "app", "apps", "update", "updates",
+    "news", "device", "devices", "mobile",
+    "feature", "features", "user", "users",
+    "version", "versions", "release", "releases", "official",
+    "global", "worldwide", "model", "models", "series",
+    "ultra", "pro", "plus", "max", "mini", "fold", "flip",
+    "lite", "fe", "xl", "note", "tab", "watch", "buds", "edge",
+    "neo", "tablet", "earbuds", "flex", "duo",
+    "oneplus", "xiaomi", "motorola", "moto", "huawei", "oppo", "vivo",
+    "honor", "realme", "nothing", "sony", "apple", "microsoft", "amazon",
+    "meta", "nokia", "lenovo", "asus", "zte", "redmi", "poco", "razr",
+    "iphone", "ipad", "qualcomm", "mediatek", "gemini",
+    "oneui", "wearos", "chromeos", "hyperos", "coloros", "oxygenos",
+    "harmonyos", "snapdragon", "exynos", "dimensity", "tensor",
+    "ai", "os", "ui", "tv", "xr", "ios", "chrome", "chromebook",
+    "play", "store",
+)
+GENERIC_STEMS = frozenset(stem(w) for w in _GENERIC_HEADLINE_SURFACES)
 
 
 # Product-line anchors. A strong entity is an anchor plus the model words /
@@ -772,18 +807,33 @@ def score_cluster(cl: Cluster, cfg: dict, now: datetime) -> None:
         kb = min(len(kws) * float(sc["keyword_bonus"]["points_each"]), float(sc["keyword_bonus"]["max"]))
         s += kb
         parts.append(f"keywords {sorted(kws)[:3]} +{kb:g}")
-    # Penalties: a story's framing is its BEST framing. If one outlet calls it
-    # a deal and another reports it as news, it is news. So take penalties
-    # from the least-penalised item that is eligible to be posted.
+    # Deal, listicle, opinion, and the other framing flags come from the median
+    # item. One outlet calling a story a deal does not make it a deal.
     def item_pen(i: Item) -> float:
         return sum(pen_pts[k] for k in i.flags if not k.startswith("_"))
     # Use the MEDIAN item's framing (lower median on ties, i.e. the kinder
     # one): one outlet calling a story a "deal" does not make it a deal, and
     # one news item wrongly merged into a deals cluster does not clean it.
+    # Privacy applies when ANY title matches (a "Privacy" headline counts).
+    # Rumor applies only when EVERY title is rumor-framed. One outlet reporting
+    # the story as fact drops the -2.5 even if another says "Could Soon".
     eligible = sorted([i for i in cl.items if i.relevant] or cl.items, key=item_pen, reverse=True)
     best = eligible[(len(eligible) - 1) // 2]
-    pen = item_pen(best)
-    flags = {k: v for k, v in best.flags.items() if not k.startswith("_")}
+    flags = {k: v for k, v in best.flags.items() if not k.startswith("_") and k in pen_pts}
+    all_rumor = bool(cl.items) and all("rumor" in i.flags for i in cl.items)
+    if not all_rumor:
+        flags.pop("rumor", None)
+    elif "rumor" not in flags:
+        for i in cl.items:
+            if "rumor" in i.flags:
+                flags["rumor"] = i.flags["rumor"]
+                break
+    if "privacy" not in flags:
+        for i in cl.items:
+            if "privacy" in i.flags:
+                flags["privacy"] = i.flags["privacy"]
+                break
+    pen = sum(pen_pts[k] for k in flags)
     rumor = "rumor" in flags
     if rumor:
         # Single-source rumor is penalised harder than a widely reported one.
@@ -1021,6 +1071,13 @@ def dedupe_hit(cl: Cluster, records: list[dict], sim: Similarity, thr: float, la
         rurls = set(r.get("cluster_urls") or []) | {r.get("norm_url")}
         if urls & rurls:
             return f"duplicate url ({label}: '{r['title'][:70]}' by {r['by']} {fmt(parse_dt(r['when']))})"
+    titles = _cluster_titles(cl)
+    for r in records:
+        shared = _rare_stem_hit(titles, r.get("title") or "")
+        if shared:
+            shown = ", ".join(sorted(shared))
+            return (f"same story ({label}: '{r['title'][:70]}' by {r['by']}, "
+                    f"rare stems {shown})")
     for r in records:
         for it in cl.items:
             s, why = sim.score(it, r)
@@ -1047,20 +1104,66 @@ def title_jaccard(a: str, b: str) -> float:
     return len(sa & sb) / len(sa | sb) if sa and sb else 0.0
 
 
+def rare_stems(title: str) -> set[str]:
+    """Stemmed headline words that can identify a story.
+
+    Stopwords are already gone (tokens()). Generic Android-news words and
+    company / product-line words are removed too, so two Galaxy Ultra headlines
+    do not match on galaxy+ultra alone.
+    """
+    return {t for t in tokens(title) if t not in GENERIC_STEMS}
+
+
+def rare_stem_overlap(a: str, b: str) -> set[str]:
+    """Shared rare stems when the titles are the same story, else empty.
+
+    Match on 3+ rare stems, or on 2+ when at least one stem is 5+ characters
+    (developer+address, privat+cloud, trad+secret).
+    """
+    shared = rare_stems(a) & rare_stems(b)
+    if len(shared) >= 3 or (len(shared) >= 2 and any(len(s) >= 5 for s in shared)):
+        return shared
+    return set()
+
+
+def _cluster_titles(cl: Cluster) -> list[str]:
+    titles = [i.title for i in cl.items]
+    if cl.post_title:
+        titles.append(cl.post_title)
+    return titles
+
+
+def _rare_stem_hit(titles: list[str], other: str) -> set[str]:
+    if not other:
+        return set()
+    for title in titles:
+        shared = rare_stem_overlap(title, other)
+        if shared:
+            return shared
+    return set()
+
+
 def community_hit(cl: Cluster, records: list[dict], sim: Similarity, thr: float, title_thr: float) -> str | None:
-    """Skip if any !android post (by anyone, last 48h) links to one of the
-    cluster's URLs, or its headline matches (normalized-title Jaccard, or the
-    clustering similarity at the stricter dedupe threshold)."""
+    """Skip if any !android post (by anyone, last 48h, human or bot) links to
+    one of the cluster's URLs, or its headline matches (normalized-title
+    Jaccard, shared rare stems, or the clustering similarity at the stricter
+    dedupe threshold)."""
     keys = {url_key(u) for u in cl.all_urls} - {""}
     for r in records:
         if url_key(r.get("norm_url") or "") in keys:
             return f"already in !android (post {r.get('id')}): same link, '{r['title'][:70]}' by {r['by']}"
-    titles = [i.title for i in cl.items] + ([cl.post_title] if cl.post_title else [])
+    titles = _cluster_titles(cl)
     for r in records:
         for t in titles:
             j = title_jaccard(t, r["title"])
             if j >= title_thr:
                 return f"already in !android (post {r.get('id')}): title match J={j:.2f}, '{r['title'][:70]}' by {r['by']}"
+    for r in records:
+        shared = _rare_stem_hit(titles, r.get("title") or "")
+        if shared:
+            shown = ", ".join(sorted(shared))
+            return (f"already in !android (post {r.get('id')}): rare stems {shown}, "
+                    f"'{r['title'][:70]}' by {r['by']}")
     for r in records:
         for it in cl.items:
             s, why = sim.score(it, r)
@@ -1181,24 +1284,63 @@ def decide(
         count += 1
 
     # Ordinary: one per poll at most, best ranked, gap + quiet hours + cap.
+    # The last `reserved_high_priority_slots` of the rolling cap are held for
+    # score >= high_priority_min_score or a privacy flag. Once that cap is
+    # full, a story with cap_bypass_min_outlets independent outlets and that
+    # same score may still post, up to the hard cap. The same stories also
+    # skip min_gap. Quiet hours, the hard cap, and one ordinary post per poll
+    # still apply (and a big story posted this poll still blocks ordinary).
+    # A story that does not qualify is skipped and the next queued story is
+    # considered, so a lower-ranked bypass or high-priority story can still
+    # take the open slot.
     def rank(c: Cluster) -> float:
         hours = (now - c.first_published).total_seconds() / 3600
         return c.score - float(sched["age_decay_per_hour"]) * hours
+
+    reserved = int(sched.get("reserved_high_priority_slots") or 0)
+    high_min = float(cfg["scoring"].get("high_priority_min_score") or 4)
+    bypass_outlets = int(cfg["scoring"].get("cap_bypass_min_outlets") or 2)
+    open_general = max(cap - reserved, 0)
+
+    def high_priority(c: Cluster) -> bool:
+        return c.score >= high_min or "privacy" in c.flags
+
+    def cap_bypass(c: Cluster) -> bool:
+        return len(c.outlets) >= bypass_outlets and c.score >= high_min
+
     ord_c.sort(key=rank, reverse=True)
-    blocker = None
-    if in_quiet_hours(now, cfg):
-        blocker = "quiet hours (PT)"
-    elif count >= cap:
-        blocker = f"rolling cap {cap}/24h reached"
-    elif last_post and now - last_post < min_gap and not to_post:
-        blocker = f"min gap ({int((now - last_post).total_seconds()//60)}m < {int(min_gap.total_seconds()//60)}m)"
-    elif to_post:
-        blocker = "a big story posted this poll"
+    quiet = in_quiet_hours(now, cfg)
+    gap_block = bool(last_post and now - last_post < min_gap and not to_post)
+    big_block = bool(to_post)
     posted_one = False
     for cl in ord_c:
-        if blocker or posted_one:
-            cl.skip = f"queued (rank {rank(cl):.2f}): {blocker or 'one ordinary post per poll'}"
+        rk = rank(cl)
+        if posted_one:
+            cl.skip = f"queued (rank {rk:.2f}): one ordinary post per poll"
             continue
+        if quiet:
+            cl.skip = f"queued (rank {rk:.2f}): quiet hours (PT)"
+            continue
+        if gap_block and not cap_bypass(cl):
+            waited = int((now - last_post).total_seconds() // 60)
+            need = int(min_gap.total_seconds() // 60)
+            cl.skip = f"queued (rank {rk:.2f}): min gap ({waited}m < {need}m)"
+            continue
+        if big_block:
+            cl.skip = f"queued (rank {rk:.2f}): a big story posted this poll"
+            continue
+        if count >= hard_cap:
+            cl.skip = f"queued (rank {rk:.2f}): hard cap {hard_cap}/24h reached"
+            continue
+        if count >= cap:
+            if not cap_bypass(cl):
+                cl.skip = f"queued (rank {rk:.2f}): rolling cap {cap}/24h reached"
+                continue
+        elif count >= open_general:
+            if not high_priority(cl):
+                cl.skip = (f"queued (rank {rk:.2f}): reserved high-priority slots "
+                           f"({reserved} of {cap})")
+                continue
         pick_representative(cl, cfg, resolve_primary, ua)
         if not cl.post_url:
             cl.skip = "no postable link (only corroborating sources)"
@@ -1207,7 +1349,15 @@ def decide(
         if hit:
             cl.skip = hit
             continue
-        cl.decision = f"POST (ordinary, rank {rank(cl):.2f})"
+        notes: list[str] = []
+        if count >= cap:
+            notes.append("cap bypass")
+        elif count >= open_general and reserved:
+            notes.append("reserved slot")
+        if gap_block and cap_bypass(cl):
+            notes.append("min gap bypass")
+        note = (", " + ", ".join(notes)) if notes else ""
+        cl.decision = f"POST (ordinary, rank {rk:.2f}{note})"
         to_post.append(cl)
         posted_one = True
     return to_post, clusters
@@ -1232,6 +1382,41 @@ def describe(cl: Cluster) -> str:
     return "\n".join(lines)
 
 
+DROP_LOG_LIMIT = 20
+
+
+def notable_drop(cl: Cluster) -> bool:
+    """A skipped cluster worth a compact line in poster.log.
+
+    `considered:` already shows the queue, dwell, and big-story holds. This
+    catches score-floor drops of a real cluster (2+ titles or 2+ outlets) and
+    other filters on a multi-outlet story (not Android-related, hard exclude,
+    stale, no link, dedupe), which otherwise never appear.
+    """
+    skip = cl.skip or ""
+    if cl.decision or not skip:
+        return False
+    multi = len(cl.outlets) >= 2
+    if skip.startswith("score ") and (multi or len(cl.items) >= 2):
+        return True
+    return multi and (
+        skip.startswith("not Android-related")
+        or skip.startswith("excluded")
+        or skip.startswith("stale")
+        or skip.startswith("no postable")
+        or skip.startswith("duplicate")
+        or skip.startswith("already in")
+        or skip.startswith("same story")
+    )
+
+
+def describe_drop(cl: Cluster) -> str:
+    outlets = ",".join(cl.outlets) or "-"
+    titles = " | ".join(i.title[:90] for i in cl.items[:4])
+    more = f" | +{len(cl.items) - 4} more" if len(cl.items) > 4 else ""
+    return f"  [{cl.cid}] score {cl.score:g} outlets={outlets}  {cl.skip}\n    {titles}{more}"
+
+
 def print_poll(now: datetime, health: list[dict], clusters: list[Cluster], to_post: list[Cluster],
                state: dict, dry: bool, verbose: bool) -> None:
     print(f"AndroidNews v2 — {'DRY RUN' if dry else 'POST'}  now={fmt2(now)}")
@@ -1249,6 +1434,14 @@ def print_poll(now: datetime, health: list[dict], clusters: list[Cluster], to_po
         print("considered:")
         for cl in sorted(shown, key=lambda c: -c.score)[: (999 if verbose else 15)]:
             print(describe(cl))
+    drops = [c for c in clusters if c not in to_post and c not in shown and notable_drop(c)]
+    if drops:
+        print("dropped:")
+        for cl in sorted(drops, key=lambda c: -c.score)[:DROP_LOG_LIMIT]:
+            print(describe_drop(cl))
+        extra = len(drops) - DROP_LOG_LIMIT
+        if extra > 0:
+            print(f"  … {extra} more dropped clusters")
 
 
 # --------------------------------------------------------------------------
