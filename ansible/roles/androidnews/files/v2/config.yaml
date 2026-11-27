@@ -13,7 +13,8 @@ schedule:
   # cron: */15 (or */10). Each run is one "poll".
   candidate_window_hours: 30   # items older than this are ignored entirely
   rolling_cap_24h: 8           # posts in any trailing 24h (not reset at midnight)
-  big_overflow: 2              # big stories may push the 24h count to cap + this
+  big_overflow: 2              # big stories, and cap-bypass stories, may push the 24h count to cap + this
+  reserved_high_priority_slots: 2  # last N of the rolling cap: score >= high_priority_min_score, or a privacy flag
   min_gap_minutes: 90          # between any post and the next ORDINARY post
   ordinary_min_dwell_minutes: 120  # let other outlets pick a story up before we choose its link/score
   ordinary_max_age_hours: 12   # skip once the story's NEWEST article is older than this
@@ -66,12 +67,14 @@ scoring:
   big_score: 6.0
   fill_min_score: 2.0          # a clean single-outlet story, used only in fill mode
   post_min_score: 3.0          # below this a story never posts (single outlet needs a keyword or official)
+  high_priority_min_score: 4.0 # reserved slots, and the floor for rolling-cap bypass
+  cap_bypass_min_outlets: 2    # after the rolling cap: this many outlets AND score >= high_priority_min_score, up to cap+big_overflow
   rumor_can_be_big: false      # v1 rule was "no rumors"; v2 lets a widely-covered rumor post ordinarily only
   rumor_single_source_extra: -2.0
   never_big: [deal, sponsored, listicle, howto]
   topic_fatigue_hours: 36      # ordinary stories sharing a product/version with a post in this window...
   topic_fatigue_points: -2.0   # ...lose this much per such post (max 2)
-  hard_exclude: [deal, sponsored]   # never post, however widely covered
+  hard_exclude: [deal, sponsored]   # never post, however widely covered (deal includes flash sale, price cuts, % off)
   keyword_bonus:
     points_each: 1.0
     max: 2.0
@@ -81,15 +84,27 @@ scoring:
       - '\b(security (patch|update|bulletin)|vulnerab\w*|exploit\w*|zero-day|malware|cve-\d+)\b'
       - '\b(price|pricing|price hike|costs? \$)\b'
       - '\b(discontinu\w*|shut(s|ting)? down|kill(s|ing|ed)?|end of support|sunset\w*)\b'
-      - '\b(antitrust|lawsuit|court|ruling|fined?|ban(s|ned)?|sideload\w*|developer verification)\b'
+      - '\b(antitrust|lawsuit|court|ruling|ban(s|ned)?|sideload\w*|developer verification)\b'
+      # "fine" only as a regulatory penalty. Not "works fine" or "fine-tune".
+      - '\bfined\b'
+      - '\bfines(?!-)'
+      - '\bfines?(?!-)\s+(?:of|for|against)\b'
+      - '\bantitrust fines?(?!-)'
+      - '(?:€|£|\$)\s?\d[\d,]*(?:\.\d+)?(?:\s+[A-Za-z]+){0,4}\s+fines?(?!-)'
+      - '\b(?:faces?|issued|levied)(?:\s+\w+){0,6}\s+fines?(?!-)'
+      - '\bdevelopers?\s+(address(?:es)?|identity|verification)\b'
+      - '\bplay\s+(store|console)\s+(policy|requirements|rules)\b'
+      - '\b(?:ai training|opt[- ]out|data training)\b'
       - '\b(android \d+(\.\d+)?|one ui \d+(\.\d+)?|pixel drop|feature drop|qpr\d)\b'
       - '\b(bootloader|grapheneos|lineageos|calyxos|custom roms?|root(ed|ing)|play integrity|app verification|developer verification|sideload(ing)?|unlock(ed|ing)?)\b'
   penalties:
     deal:
       points: -6
       patterns:
-        - '\b(deals?|coupon|discount\w*|black friday|cyber monday|prime day|price drop|on sale|lowest price|price cuts?|perk that stacks)\b'
-        - '(less than half the price|for (just|only) \$\d+|under \$\d+|\$\d+ off|save \$\d+|\bgrab (one|it|this)\b)'
+        # \bdeals?\b so "ideal" and "dealing" do not match. "lowest-ever price",
+        # "cuts the price" / "cuts price", and "flash sale" are deals too.
+        - '\b(deals?|coupon|discount\w*|black friday|cyber monday|prime day|price drop|on sale|lowest(?:[ -]ever)? prices?|price cuts?|cuts? (?:the )?prices?|flash sales?|perk that stacks)\b'
+        - '(less than half the price|for (just|only) \$\d+|under \$\d+|\$\d+ off|save \$\d+|\bgrab (one|it|this)\b|\b\d+% off\b)'
     sponsored:
       points: -10
       patterns: ['\b(sponsored|partner content|advertorial|presented by|in partnership with)\b', '\(ad\)']
@@ -122,6 +137,10 @@ scoring:
         - '\b(could start|may finally|is working on)\b'
         # Hedge verbs (replaces the queued hedge fix). Does not match "will get" / "you can now get".
         - '\b(may|might|could|expected to) (soon |finally )?(shift|debut|launch|land|end|arrive|come|drop|switch|skip|ditch|change|feature|offer|cost|bring|get)\b'
+        # Bare hedges. rumored/tipped are also in the leak alternation above.
+        # "may" is month-guarded: "in May 2026", "May 15", "this May" are not rumors.
+        - '\b(?:could|might|cooking up|said to|rumou?red|tipped)\b'
+        - '(?<!\bin )(?<!\bthis )(?<!\bnext )(?<!\blast )(?<!\bearly )(?<!\blate )(?<!\bmid )(?<!\bfrom )(?<!\bby )(?<!\buntil )(?<!\bbefore )(?<!\bafter )(?<!\bduring )(?<!\bof )(?<!\bthrough )(?<!\b\d )(?<!\b\d\d )\bmay\b(?!\s+\d)'
     ai_feature:
       points: -2
       patterns: ['\b(gemini|ai mode|smart repl(y|ies)|agentic|ai-powered)\b']
@@ -131,7 +150,12 @@ scoring:
     privacy:
       points: 3
       # Signal only as the app: case-sensitive 'Signal' (scoped (?-i:)), minus radio/cell/turn-signal contexts (change F 2026-11-22)
-      patterns: ['\b((?<!\blose )(?<!\blost )(?<!\blosing )(?<!\bloses )(?<!\bcell )(?<!\bgps )(?<!\bturn )(?<!\bweak )(?<!\bstrong )(?<!\bwifi )(?<!\bwi-fi )(?<!\bradio )(?<!\bphone )(?<!\bmobile )(?<!\bno )(?<!\b5g )(?<!\blte )(?<!\btv )(?<!\bbad )(?<!\bpoor )(?<!\bbetter )(?<!\bstop )(?<!\btraffic )(?<!\bclear )(?<!\bmixed )(?<!\bwarning )(?<!\bdistress )(?<!\bbuy )(?<!\bsell )(?<!\bsends )(?<!\bsend )(?<!\bsending )(?-i:Signal)\b(?![''’]?\s*(strength|bars?|booster|loss|issues?|range|coverage|quality|processing|processor|light|lights|amplifier|repeater|jammers?|interference|noise|drops?|towers?|reception)\b)|proton ?(mail|vpn|pass|drive)?|tor browser|mullvad|duckduckgo|grapheneos|e2ee|end-to-end encrypt\w*|encrypted messag\w*|spyware|stalkerware|surveillance|privacy)\b']
+      patterns:
+        - '\b((?<!\blose )(?<!\blost )(?<!\blosing )(?<!\bloses )(?<!\bcell )(?<!\bgps )(?<!\bturn )(?<!\bweak )(?<!\bstrong )(?<!\bwifi )(?<!\bwi-fi )(?<!\bradio )(?<!\bphone )(?<!\bmobile )(?<!\bno )(?<!\b5g )(?<!\blte )(?<!\btv )(?<!\bbad )(?<!\bpoor )(?<!\bbetter )(?<!\bstop )(?<!\btraffic )(?<!\bclear )(?<!\bmixed )(?<!\bwarning )(?<!\bdistress )(?<!\bbuy )(?<!\bsell )(?<!\bsends )(?<!\bsend )(?<!\bsending )(?-i:Signal)\b(?![''’]?\s*(strength|bars?|booster|loss|issues?|range|coverage|quality|processing|processor|light|lights|amplifier|repeater|jammers?|interference|noise|drops?|towers?|reception)\b)|proton ?(mail|vpn|pass|drive)?|tor browser|mullvad|duckduckgo|grapheneos|e2ee|end-to-end encrypt\w*|encrypted messag\w*|spyware|stalkerware|surveillance|privacy)\b'
+        # AI-training privacy. Also keyword bonuses above. Any cluster title counts.
+        - '\bai training\b'
+        - '\bopt[- ]out\b'
+        - '\bdata training\b'
 
 # Topic synonyms: phrases rewritten to one token before matching, so outlets
 # that word the same story differently still cluster. Add as you spot misses.
@@ -177,13 +201,19 @@ filters:
 # role: post = may be the linked source; corroborate = only counts toward coverage.
 # priority: 2 = preferred link when several outlets have the story.
 sources:
-  - {id: keyword-android, name: Google Keyword (Android), url: 'https://blog.google/products/android/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  # 2026-11-27: /products/android/rss/ returns 301. This is the canonical URL.
+  - {id: keyword-android, name: Google Keyword (Android), url: 'https://blog.google/products-and-platforms/platforms/android/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true}
   # 2026-11-21: keyword-pixel (devices/pixel) replaced by the parent Devices feed (a superset:
   # Pixel, Pixel Watch, Fitbit, Nest/Home, Google Health). keyword-wear dropped: ~2 posts/year,
   # newest Jun 16. Google News query feeds were tested and rejected (news.google.com redirect
   # links, off-topic noise, and one aggregator would score as an extra outlet).
+  # 2026-11-27 audit: this URL already returns 200 with no redirect. Left unchanged (stale_hours 336).
   - {id: keyword-devices, name: Google Keyword (Devices), url: 'https://blog.google/products-and-platforms/devices/rss/', official: true, outlet: google, role: post, priority: 3, enabled: true, stale_hours: 336}
-  - {id: android-developers, name: Android Developers Blog, url: 'https://android-developers.googleblog.com/atom.xml', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  # 2026-11-27: android-developers.googleblog.com/atom.xml returns 302. This is the canonical URL.
+  - {id: android-developers, name: Android Developers Blog, url: 'https://developer.android.com/static/blog/atom.xml', official: true, outlet: google, role: post, priority: 3, enabled: true}
+  # 2026-11-27 proposal: official LineageOS feed. Posts are infrequent, so stale_hours
+  # is 720 (30 days). Raise the window, set enabled: false, or delete this source.
+  - {id: lineageos, name: LineageOS, url: 'https://lineageos.org/feed.xml', official: true, outlet: lineageos, role: post, priority: 3, enabled: true, stale_hours: 720}
   - {id: samsung-newsroom, name: Samsung Global Newsroom, url: 'https://news.samsung.com/global/feed', official: true, outlet: samsung, role: post, priority: 3, enabled: true,
      require_pattern: '\b(galaxy|one ui|smartphone|mobile|mx business|foldable|wear ?os|android)\b|/mobile|announces-new-leadership'}
   - {id: asb, name: Android Security Bulletin, type: asb_poll, url_template: 'https://source.android.com/docs/security/bulletin/{year}/{year}-{month:02d}-01',
