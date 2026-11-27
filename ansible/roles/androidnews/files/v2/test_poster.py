@@ -542,7 +542,7 @@ class ConfigTests(PosterTestCase):
         )
         lineage = by_id["lineageos"]
         self.assertEqual(lineage["url"], "https://lineageos.org/feed.xml")
-        self.assertEqual(lineage["stale_hours"], 720)
+        self.assertEqual(lineage["stale_hours"], 2160)
         self.assertTrue(lineage["official"])
         self.assertTrue(lineage["enabled"])
         self.assertEqual(sum(1 for s in self.cfg["sources"] if s.get("enabled", True)), 20)

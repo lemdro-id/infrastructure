@@ -109,7 +109,7 @@ Live audit of the Google and Android Developers feeds, plus one addition:
 | `keyword-android` | `https://blog.google/products/android/rss/` returned 301. v2 now uses the canonical `https://blog.google/products-and-platforms/platforms/android/rss/`. |
 | `keyword-devices` | `https://blog.google/products-and-platforms/devices/rss/` returned 200 with no redirect. Unchanged. `stale_hours` stays 336. |
 | `android-developers` | `https://android-developers.googleblog.com/atom.xml` returned 302. v2 now uses `https://developer.android.com/static/blog/atom.xml`. |
-| `lineageos` | Added `https://lineageos.org/feed.xml` as an official source with `stale_hours: 720` (30 days). This is a proposal: raise the window, set `enabled: false`, or drop the source. |
+| `lineageos` | Added `https://lineageos.org/feed.xml` as an official source with `stale_hours: 2160` (90 days). This is a proposal: set `enabled: false`, or drop the source. |
 
 ## Tuning notes
 

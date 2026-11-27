@@ -212,8 +212,8 @@ sources:
   # 2026-11-27: android-developers.googleblog.com/atom.xml returns 302. This is the canonical URL.
   - {id: android-developers, name: Android Developers Blog, url: 'https://developer.android.com/static/blog/atom.xml', official: true, outlet: google, role: post, priority: 3, enabled: true}
   # 2026-11-27 proposal: official LineageOS feed. Posts are infrequent, so stale_hours
-  # is 720 (30 days). Raise the window, set enabled: false, or delete this source.
-  - {id: lineageos, name: LineageOS, url: 'https://lineageos.org/feed.xml', official: true, outlet: lineageos, role: post, priority: 3, enabled: true, stale_hours: 720}
+  # is 2160 (90 days). Set enabled: false or delete this source to drop it.
+  - {id: lineageos, name: LineageOS, url: 'https://lineageos.org/feed.xml', official: true, outlet: lineageos, role: post, priority: 3, enabled: true, stale_hours: 2160}
   - {id: samsung-newsroom, name: Samsung Global Newsroom, url: 'https://news.samsung.com/global/feed', official: true, outlet: samsung, role: post, priority: 3, enabled: true,
      require_pattern: '\b(galaxy|one ui|smartphone|mobile|mx business|foldable|wear ?os|android)\b|/mobile|announces-new-leadership'}
   - {id: asb, name: Android Security Bulletin, type: asb_poll, url_template: 'https://source.android.com/docs/security/bulletin/{year}/{year}-{month:02d}-01',
